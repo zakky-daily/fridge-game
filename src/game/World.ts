@@ -29,6 +29,12 @@ const waypoints = [
   new THREE.Vector3(-6.1, 0, 5.5),
 ];
 
+const openingEscapePath = [
+  new THREE.Vector3(3.5, 0, 6.85),
+  new THREE.Vector3(6.5, 0, 5.4),
+  new THREE.Vector3(6.55, 0, 2.0),
+];
+
 export class World {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
@@ -41,6 +47,7 @@ export class World {
   private colliders: BoxCollider[] = [];
   private waypointIndex = 0;
   private waypointDirection: 1 | -1 = 1;
+  private openingEscapeIndex = 0;
   private cameraYaw = -Math.PI / 2;
   private cameraPitch = 0.34;
   private clockTime = 0;
@@ -72,18 +79,18 @@ export class World {
 
   resetForOpening() {
     this.clearItems();
-    this.player.position.set(-3.8, 0, 4.2);
+    this.openingEscapeIndex = 0;
+    this.player.position.set(-4, 0, 6.85);
     this.player.rotation.y = -Math.PI / 2;
-    this.fridge.position.set(1.5, 0, 4.2);
-    this.fridge.rotation.y = 0;
+    this.fridge.position.set(0.8, 0, 6.85);
+    this.fridge.rotation.set(0, 0, 0);
     this.player.visible = true;
     this.fridge.visible = true;
     this.setFridgeMood('smug');
-    // Keep the camera inside the south wall. On narrow screens, frame the fridge
-    // near the center because the menu occupies the lower half of the screen.
+    // Shoot across the open south corridor, away from the kitchen partition.
     const narrow = this.camera.aspect < 0.75;
-    this.camera.position.set(narrow ? 1.4 : -0.5, 3.4, 8.8);
-    this.camera.lookAt(narrow ? 1.4 : -0.5, narrow ? 0.25 : 1.3, narrow ? 4.2 : 3.4);
+    this.camera.position.set(narrow ? 1.2 : 3.6, narrow ? 3.5 : 3.9, narrow ? 9.15 : 9.2);
+    this.camera.lookAt(narrow ? 1.2 : 0.3, narrow ? 0.4 : 1.25, narrow ? 6.35 : 6.2);
   }
 
   animateOpening(stage: number, dt: number) {
@@ -92,13 +99,21 @@ export class World {
       this.player.position.x = Math.min(-1, this.player.position.x + dt * 0.65);
       this.player.rotation.y = -Math.PI / 2;
     }
-    if (stage >= 4) {
-      this.setFridgeMood(stage >= 6 ? 'worried' : 'smug');
+    if (stage >= 5) {
+      this.setFridgeMood(stage >= 11 ? 'worried' : 'smug');
       this.fridge.rotation.z = Math.sin(this.clockTime * 8) * 0.035;
     }
-    if (stage >= 7) {
-      this.fridge.position.x += dt * 4;
-      this.fridge.rotation.y = Math.PI / 2;
+    if (stage >= 11 && this.openingEscapeIndex < openingEscapePath.length) {
+      const target = openingEscapePath[this.openingEscapeIndex];
+      const direction = target.clone().sub(this.fridge.position).setY(0);
+      const remaining = direction.length();
+      if (remaining < 0.12) {
+        this.openingEscapeIndex += 1;
+      } else {
+        direction.normalize();
+        this.fridge.position.addScaledVector(direction, Math.min(remaining, dt * 4.2));
+        this.fridge.rotation.y = Math.atan2(direction.x, direction.z);
+      }
     }
     this.animateCharacters(dt, false);
   }

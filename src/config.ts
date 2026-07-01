@@ -6,8 +6,8 @@ export const GAME_CONFIG = {
     radius: 0.55,
   },
   fridge: {
-    easyBaseSpeed: 2.65,
-    normalBaseSpeed: 3.35,
+    easyBaseSpeed: 3.05,
+    normalBaseSpeed: 4.1,
     minSpeedRate: 0.42,
     catchDistance: 1.7,
   },

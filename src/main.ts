@@ -2,7 +2,7 @@ import './style.css';
 import { Game } from './game/Game';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <canvas id="game-canvas" aria-label="逃走する冷蔵庫 3Dゲーム画面"></canvas>
+  <canvas id="game-canvas" tabindex="0" aria-label="逃走する冷蔵庫 3Dゲーム画面"></canvas>
   <div id="overlay" class="overlay"></div>
 
   <div id="hud" class="hud hidden">

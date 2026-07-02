@@ -14,7 +14,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div class="meter-inner">
         <small>摂取カロリー<br>見直し</small>
         <b><span id="meter-value">0</span><i>kcal</i></b>
-        <em>ゲーム内推定</em>
+        <em>※ゲーム内推定</em>
       </div>
     </div>
     <div class="boost-card"><span>水ブースト</span><b id="boost-value">—</b></div>

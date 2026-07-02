@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp, DIFFICULTY_SETTINGS, GAME_CONFIG, type Difficulty } from '../config';
+import { AudioManager } from './AudioManager';
 import { Input } from './Input';
 import { World } from './World';
 
@@ -17,13 +18,13 @@ const openingLines = [
   { speaker: '主人公', text: '今日はよく頑張ったし、少しくらいごほうびがあってもいいはず……。' },
   { speaker: '主人公', text: 'ついでにチョコが無事かどうかも確認しておこう。うん、仕方ない。' },
   { speaker: 'お菓子BOX', text: 'その「仕方ない」、昨日も聞いたけど？' },
-  { speaker: '主人公', text: 'うわっ！？ お菓子BOXがしゃべった！？' },
+  { speaker: '主人公', text: '出たな！？ お菓子BOX！！' },
   { speaker: 'お菓子BOX', text: '最近、運動って言葉を聞いただけで目をそらしてない？' },
-  { speaker: '主人公', text: '確かに……。生活習慣を見抜かれてる……。' },
+  { speaker: '主人公', text: '確かにそうだけど……。生活習慣を見抜かれてる……。' },
   { speaker: 'お菓子BOX', text: '食べたいなら、まずは少し運動。追いつけたら考えてあげる。' },
   { speaker: '主人公', text: 'は、はぁ〜！？' },
   { speaker: 'お菓子BOX', text: 'ふふん、追いつけるものなら追いついてごらん！' },
-  { speaker: 'ナレーション', text: 'こうして、深夜の家で謎の健康鬼ごっこが始まった。' },
+  { speaker: 'ナレーション', text: 'こうして、深夜の家で謎の鬼ごっこが始まった。' },
 ];
 
 const candyBoxLines = [
@@ -49,7 +50,7 @@ export class Game {
   private speechTimer = 0;
   private speechIndex = 0;
   private lastTime = performance.now();
-  private audioContext: AudioContext | null = null;
+  private audio = new AudioManager();
 
   private overlay = this.required<HTMLElement>('#overlay');
   private hud = this.required<HTMLElement>('#hud');
@@ -91,7 +92,8 @@ export class Game {
 
   private setScreen(screen: Screen) {
     this.screen = screen;
-    this.overlay.className = screen === 'playing' ? 'overlay hidden' : 'overlay';
+    this.overlay.className =
+      screen === 'playing' ? 'overlay hidden' : screen === 'opening' ? 'overlay opening-overlay' : 'overlay';
     this.hud.classList.toggle('hidden', screen !== 'playing');
     this.touchControls.classList.toggle('hidden', screen !== 'playing');
     this.toast.classList.add('hidden');
@@ -99,13 +101,14 @@ export class Game {
 
   private showHome = () => {
     this.setScreen('home');
+    this.audio.startBgm('menu');
     this.world.resetForOpening();
     this.overlay.innerHTML = `
       <main class="menu-panel home-panel">
         <div class="eyebrow">MIDNIGHT HEALTH CHASE</div>
         <h1 class="home-title">逃げる<br><span>お菓子BOX</span></h1>
         <p class="tagline">深夜、透明なお菓子BOXは転がり出した。</p>
-        <div class="system-summary"><b>お菓子欲を、追いかけ運動へ。</b><span>今の体調に合わせて遊び、動くほどBOXが遅くなる健康支援システム。</span></div>
+        <div class="system-summary"><b>お菓子欲を、運動のモチベーションに。</b><span>お菓子を取ろうとすると、BOXが勝手に逃げ出す。私たちが何とか捕まえた頃には、自然とカロリーを消費している。画期的な運動促進システム</span></div>
         <div class="menu-actions">
           <button class="primary-button" data-action="start"><span>▶</span> はじめから</button>
           <button class="secondary-button" data-action="movie">ムービーを見る</button>
@@ -136,7 +139,10 @@ export class Game {
       </main>
     `;
     this.overlay.querySelectorAll('[data-action="back"]').forEach((button) => {
-      button.addEventListener('click', this.showHome);
+      button.addEventListener('click', () => {
+        this.audio.playEffect('select');
+        this.showHome();
+      });
     });
   };
 
@@ -145,6 +151,7 @@ export class Game {
     this.openingIndex = 0;
     this.openingAutoTimer = 0;
     this.setScreen('opening');
+    this.audio.startBgm('opening');
     this.world.resetForOpening();
     this.overlay.innerHTML = `
       <div class="cinema-bars"></div>
@@ -163,12 +170,15 @@ export class Game {
 
   private updateOpening(dt: number) {
     this.openingAutoTimer += dt;
+    const look = this.input.getLookDelta();
+    this.world.updateOpeningLook(look.x, look.y);
     this.world.animateOpening(this.openingIndex, dt);
     if (this.openingAutoTimer > 4.8) this.nextOpeningLine();
   }
 
   private nextOpeningLine = () => {
     if (this.screen !== 'opening') return;
+    this.audio.playEffect('dialogue');
     this.openingIndex += 1;
     this.openingAutoTimer = 0;
     if (this.openingIndex >= openingLines.length) {
@@ -193,6 +203,7 @@ export class Game {
 
   private showDifficulty = () => {
     this.setScreen('difficulty');
+    this.audio.startBgm('menu');
     this.overlay.innerHTML = `
       <main class="menu-panel mood-panel">
         <div class="eyebrow">CHECK IN WITH YOURSELF</div>
@@ -208,6 +219,7 @@ export class Game {
     `;
     this.overlay.querySelectorAll<HTMLElement>('[data-mode]').forEach((button) => {
       button.addEventListener('click', () => {
+        this.audio.playEffect('select');
         const mode = button.dataset.mode;
         if (mode === 'rest') this.showRestEnding();
         else this.startGame(mode as Difficulty);
@@ -217,6 +229,7 @@ export class Game {
 
   private showRestEnding() {
     this.setScreen('rest');
+    this.audio.startBgm('rest');
     this.world.player.visible = false;
     this.world.setPlayerShape(0);
     this.overlay.innerHTML = `
@@ -246,6 +259,7 @@ export class Game {
     this.speechIndex = 0;
     this.world.resetForGame(difficulty);
     this.setScreen('playing');
+    this.audio.startBgm('game');
     this.modeValue.textContent = DIFFICULTY_SETTINGS[difficulty].label;
     this.updateHud();
     this.showToast('お菓子BOXを追いかけよう！', 1700);
@@ -283,7 +297,7 @@ export class Game {
       this.itemCount += collected;
       this.boostRemaining = GAME_CONFIG.boost.duration;
       this.calories += 2.5;
-      this.playPickupSound();
+      this.audio.playEffect('water');
       this.showToast('水分補給！ 4秒ブースト', 1500);
     }
 
@@ -323,14 +337,15 @@ export class Game {
 
   private showResult(result: Result) {
     this.setScreen('result');
-    const type =
-      result.calories >= 55 ? 'しなやか継続タイプ' : result.items >= 3 ? '水分補給マスター' : '小さな一歩タイプ';
+    this.audio.playEffect('catch');
+    this.audio.startBgm('result');
+    const type = this.getHealthType(result);
     this.overlay.innerHTML = `
       <main class="menu-panel result-panel">
         <div class="result-check">✓</div>
         <div class="eyebrow">CHASE COMPLETE!</div>
         <h2>お菓子BOXを捕まえた！</h2>
-        <p class="result-message">少し動くだけでも、体はちゃんと反応している。</p>
+        <p class="result-message">少し運動するだけでも、体はちゃんと反応している。</p>
         <div class="result-stats">
           <div><small>ゲーム内消費カロリー</small><b>${Math.round(result.calories)}<i> kcal</i></b></div>
           <div><small>タイム</small><b>${this.formatTime(result.seconds)}</b></div>
@@ -366,18 +381,12 @@ export class Game {
     }, 2600);
   }
 
-  private playPickupSound() {
-    this.audioContext ??= new AudioContext();
-    const oscillator = this.audioContext.createOscillator();
-    const gain = this.audioContext.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(520, this.audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(880, this.audioContext.currentTime + 0.14);
-    gain.gain.setValueAtTime(0.12, this.audioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.2);
-    oscillator.connect(gain).connect(this.audioContext.destination);
-    oscillator.start();
-    oscillator.stop(this.audioContext.currentTime + 0.2);
+  private getHealthType(result: Result) {
+    if (result.seconds <= 35 && result.items >= 2) return 'ウォーター・スプリンター';
+    if (result.items >= 4) return '水分補給マスター';
+    if (result.calories >= 65 || result.seconds >= 85) return 'じっくり継続タイプ';
+    if (result.calories >= 35 && result.items >= 2) return 'バランス運動タイプ';
+    return '小さな一歩タイプ';
   }
 
   private formatTime(seconds: number) {
@@ -387,7 +396,10 @@ export class Game {
   }
 
   private bind(selector: string, handler: () => void) {
-    this.required<HTMLElement>(selector).addEventListener('click', handler);
+    this.required<HTMLElement>(selector).addEventListener('click', () => {
+      this.audio.playEffect('select');
+      handler();
+    });
   }
 
   private required<T extends Element = HTMLElement>(selector: string): T {

@@ -24,13 +24,13 @@ export type Difficulty = 'easy' | 'normal';
 export const DIFFICULTY_SETTINGS = {
   easy: {
     fridgeSpeed: GAME_CONFIG.fridge.easyBaseSpeed,
-    itemCount: 8,
+    itemCount: 5,
     minSpeedRate: 0.42,
     label: '少し疲れている',
   },
   normal: {
     fridgeSpeed: GAME_CONFIG.fridge.normalBaseSpeed,
-    itemCount: 5,
+    itemCount: 3,
     minSpeedRate: 0.8,
     label: '今日は頑張る',
   },

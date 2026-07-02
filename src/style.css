@@ -55,6 +55,14 @@ button {
   transition: opacity 0.25s;
 }
 
+.opening-overlay {
+  pointer-events: none;
+}
+
+.opening-overlay button {
+  pointer-events: auto;
+}
+
 .hidden {
   opacity: 0 !important;
   pointer-events: none !important;

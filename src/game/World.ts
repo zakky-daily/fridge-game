@@ -14,16 +14,16 @@ type BoxCollider = {
 };
 
 // A wide, connected loop through every room. Furniture is deliberately kept
-// outside this route so the fridge never gets trapped against a collider.
+// outside this route so the candy box never gets trapped against a collider.
 const waypoints = [
   new THREE.Vector3(-2.5, 0, 7.0),
   new THREE.Vector3(3.4, 0, 7.0),
   new THREE.Vector3(6.7, 0, 5.4),
   new THREE.Vector3(6.7, 0, 1.1),
   new THREE.Vector3(6.8, 0, -5.8),
-  new THREE.Vector3(3.2, 0, -7.5),
-  new THREE.Vector3(-1.2, 0, -7.5),
-  new THREE.Vector3(-7.5, 0, -7.5),
+  new THREE.Vector3(3.2, 0, -5.8),
+  new THREE.Vector3(-1.2, 0, -5.8),
+  new THREE.Vector3(-7.4, 0, -5.8),
   new THREE.Vector3(-7.7, 0, -2.4),
   new THREE.Vector3(-6.3, 0, 1.0),
   new THREE.Vector3(-6.1, 0, 5.5),
@@ -33,6 +33,21 @@ const openingEscapePath = [
   new THREE.Vector3(3.5, 0, 6.85),
   new THREE.Vector3(6.5, 0, 5.4),
   new THREE.Vector3(6.55, 0, 2.0),
+];
+
+const waterItemPositions: Array<[number, number]> = [
+  [-2.3, 5.4],
+  [4.7, 6.7],
+  [6.7, 3.0],
+  [6.7, -4.8],
+  [2.0, -5.8],
+  [-2.0, -5.8],
+  [-7.4, -2.0],
+  [-6.1, 2.2],
+  [0.5, 4.8],
+  [5.2, -0.8],
+  [-5.0, 0.5],
+  [1.0, -4.5],
 ];
 
 export class World {
@@ -47,16 +62,21 @@ export class World {
   private candyPayload = new THREE.Group();
   private candyPieces: THREE.Object3D[] = [];
   private items: Item[] = [];
+  private itemSpawnTimer = 4;
   private colliders: BoxCollider[] = [];
   private waypointIndex = 0;
   private waypointDirection: 1 | -1 = 1;
   private openingEscapeIndex = 0;
   private openingPlayerStopX = -1;
+  private openingLookYaw = 0;
+  private openingLookPitch = 0;
+  private openingCameraBase = new THREE.Quaternion();
   private cameraYaw = -Math.PI / 2;
   private cameraPitch = 0.34;
   private clockTime = 0;
-  private playerTorso!: THREE.Mesh;
-  private playerBelly!: THREE.Mesh;
+  private playerBodyMesh!: THREE.Mesh;
+  private playerBodyBasePositions = new Float32Array();
+  private playerShapeRate = 0;
   private playerBelt!: THREE.Mesh;
   private playerArms: THREE.Object3D[] = [];
   private playerLegs: THREE.Object3D[] = [];
@@ -100,6 +120,17 @@ export class World {
     // Shoot across the open south corridor, away from the kitchen partition.
     this.camera.position.set(narrow ? 0 : 3.6, narrow ? 5.4 : 3.9, narrow ? 9.2 : 9.2);
     this.camera.lookAt(narrow ? 0 : 0.3, narrow ? -5.5 : 1.25, narrow ? 6.35 : 6.2);
+    this.openingLookYaw = 0;
+    this.openingLookPitch = 0;
+    this.openingCameraBase.copy(this.camera.quaternion);
+  }
+
+  updateOpeningLook(deltaX: number, deltaY: number) {
+    this.openingLookYaw = clamp(this.openingLookYaw - deltaX * 0.004, -0.75, 0.75);
+    this.openingLookPitch = clamp(this.openingLookPitch - deltaY * 0.003, -0.32, 0.3);
+    this.camera.quaternion.copy(this.openingCameraBase);
+    this.camera.rotateY(this.openingLookYaw);
+    this.camera.rotateX(this.openingLookPitch);
   }
 
   animateOpening(stage: number, dt: number) {
@@ -228,23 +259,28 @@ export class World {
     const rate = clamp(calories / GAME_CONFIG.calories.maxForScaling, 0, 1);
     const blend = immediate ? 1 : 0.055;
     const approach = (current: number, target: number) => lerp(current, target, blend);
+    this.playerShapeRate = immediate ? rate : approach(this.playerShapeRate, rate);
+    this.updatePlayerBodyGeometry(this.playerShapeRate);
 
-    const bellyWidth = lerp(1.52, 0.78, rate);
-    const bellyDepth = lerp(1.3, 0.76, rate);
-    this.playerBelly.scale.x = approach(this.playerBelly.scale.x, bellyWidth);
-    this.playerBelly.scale.y = approach(this.playerBelly.scale.y, lerp(1.12, 0.94, rate));
-    this.playerBelly.scale.z = approach(this.playerBelly.scale.z, bellyDepth);
-    this.playerBelly.position.y = approach(this.playerBelly.position.y, lerp(1.32, 1.38, rate));
-
-    this.playerTorso.scale.x = approach(this.playerTorso.scale.x, lerp(1.08, 0.82, rate));
-    this.playerTorso.scale.z = approach(this.playerTorso.scale.z, lerp(0.86, 0.72, rate));
-    this.playerBelt.scale.x = approach(this.playerBelt.scale.x, lerp(1.38, 0.8, rate));
-    this.playerBelt.scale.z = approach(this.playerBelt.scale.z, lerp(1.14, 0.72, rate));
+    this.playerBelt.scale.x = approach(
+      this.playerBelt.scale.x,
+      lerp(1.46, 0.9, this.playerShapeRate),
+    );
+    this.playerBelt.scale.z = approach(
+      this.playerBelt.scale.z,
+      lerp(1.28, 0.82, this.playerShapeRate),
+    );
 
     this.playerArms.forEach((arm, index) => {
       const side = index === 0 ? -1 : 1;
-      arm.position.x = approach(arm.position.x, side * lerp(0.96, 0.67, rate));
-      arm.rotation.z = approach(arm.rotation.z, side * lerp(-0.18, -0.05, rate));
+      arm.position.x = approach(
+        arm.position.x,
+        side * lerp(0.98, 0.65, this.playerShapeRate),
+      );
+      arm.rotation.z = approach(
+        arm.rotation.z,
+        side * lerp(-0.16, -0.035, this.playerShapeRate),
+      );
     });
     this.playerLegs.forEach((leg, index) => {
       const side = index === 0 ? -1 : 1;
@@ -254,6 +290,32 @@ export class World {
       const side = index === 0 ? -1 : 1;
       shoe.position.x = approach(shoe.position.x, side * lerp(0.36, 0.25, rate));
     });
+  }
+
+  private updatePlayerBodyGeometry(rate: number) {
+    const positions = this.playerBodyMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const vertexCount = positions.count;
+    for (let index = 0; index < vertexCount; index += 1) {
+      const baseX = this.playerBodyBasePositions[index * 3];
+      const baseY = this.playerBodyBasePositions[index * 3 + 1];
+      const baseZ = this.playerBodyBasePositions[index * 3 + 2];
+      const normalizedY = baseY / 0.68;
+      const bellyWeight = Math.exp(-Math.pow((normalizedY + 0.18) / 0.52, 2));
+      const upperWidth = lerp(1.06, 0.88, rate);
+      const bellyWidth = lerp(1.5, 0.92, rate);
+      const upperDepth = lerp(0.92, 0.78, rate);
+      const bellyDepth = lerp(1.32, 0.84, rate);
+      const width = lerp(upperWidth, bellyWidth, bellyWeight);
+      const depth = lerp(upperDepth, bellyDepth, bellyWeight);
+      positions.setXYZ(
+        index,
+        baseX * width,
+        baseY * 1.45,
+        baseZ * depth + bellyWeight * lerp(0.1, 0.015, rate),
+      );
+    }
+    positions.needsUpdate = true;
+    this.playerBodyMesh.geometry.computeVertexNormals();
   }
 
   collectNearbyItems(): number {
@@ -275,6 +337,16 @@ export class World {
         item.mesh.rotation.y += dt * 1.8;
         item.mesh.position.y = 0.75 + Math.sin(this.clockTime * 3 + item.mesh.position.x) * 0.12;
       }
+    }
+    const remaining = this.items.filter((item) => !item.collected).length;
+    if (remaining <= 1) {
+      this.itemSpawnTimer -= dt;
+      if (this.itemSpawnTimer <= 0) {
+        this.spawnRandomWaterItem();
+        this.itemSpawnTimer = 5 + Math.random() * 4;
+      }
+    } else {
+      this.itemSpawnTimer = Math.min(this.itemSpawnTimer, 3);
     }
   }
 
@@ -487,10 +559,10 @@ export class World {
   }
 
   private buildBedroom() {
-    this.addFurniture(-4.65, 0, -5.25, 3.05, 0.46, 2.45, '#725244');
-    this.addFurniture(-4.65, 0.5, -5.15, 2.82, 0.3, 2.15, '#d7d0c2', false);
-    this.addFurniture(-4.65, 0.84, -6.05, 2.7, 0.16, 0.68, '#e8e2d8', false);
-    this.addFurniture(-4.65, 0.82, -4.88, 2.68, 0.08, 1.18, '#7085a5', false);
+    this.addFurniture(-4.65, 0, -8.15, 3.05, 0.46, 2.45, '#725244');
+    this.addFurniture(-4.65, 0.5, -8.05, 2.82, 0.3, 2.15, '#d7d0c2', false);
+    this.addFurniture(-4.65, 0.84, -8.85, 2.7, 0.16, 0.68, '#e8e2d8', false);
+    this.addFurniture(-4.65, 0.82, -7.78, 2.68, 0.08, 1.18, '#7085a5', false);
 
     this.addFurniture(-9.05, 0, -4.45, 1.05, 2.45, 2.65, '#58463c');
     for (const z of [-5.1, -3.8]) {
@@ -606,15 +678,13 @@ export class World {
     const pants = new THREE.MeshStandardMaterial({ color: '#233a61', roughness: 0.8 });
     const shoes = new THREE.MeshStandardMaterial({ color: '#17223a', roughness: 0.7 });
 
-    this.playerTorso = new THREE.Mesh(new THREE.SphereGeometry(0.62, 22, 16), shirt);
-    this.playerTorso.scale.set(1.08, 1.12, 0.86);
-    this.playerTorso.position.y = 1.85;
-    this.playerTorso.castShadow = true;
-
-    this.playerBelly = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 18), shirt);
-    this.playerBelly.scale.set(1.52, 1.12, 1.3);
-    this.playerBelly.position.set(0, 1.32, 0.09);
-    this.playerBelly.castShadow = true;
+    const bodyGeometry = new THREE.SphereGeometry(0.68, 26, 20);
+    this.playerBodyBasePositions = new Float32Array(
+      (bodyGeometry.getAttribute('position') as THREE.BufferAttribute).array,
+    );
+    this.playerBodyMesh = new THREE.Mesh(bodyGeometry, shirt);
+    this.playerBodyMesh.position.y = 1.56;
+    this.playerBodyMesh.castShadow = true;
 
     this.playerBelt = new THREE.Mesh(
       new THREE.TorusGeometry(0.64, 0.055, 8, 24),
@@ -624,7 +694,7 @@ export class World {
     this.playerBelt.position.set(0, 1.03, 0.04);
     this.playerBelt.castShadow = true;
 
-    this.playerBody.add(this.playerTorso, this.playerBelly, this.playerBelt);
+    this.playerBody.add(this.playerBodyMesh, this.playerBelt);
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 18, 14), skin);
     head.position.y = 2.72;
@@ -644,8 +714,8 @@ export class World {
     this.playerShoes = [];
     for (const side of [-1, 1] as const) {
       const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.7, 6, 10), skin);
-      arm.position.set(side * 0.96, 1.5, 0);
-      arm.rotation.z = side * -0.18;
+      arm.position.set(side * 0.98, 1.5, 0);
+      arm.rotation.z = side * -0.16;
       arm.castShadow = true;
       this.player.add(arm);
       this.playerArms.push(arm);
@@ -741,17 +811,18 @@ export class World {
     this.candyPayload.add(bowl, rim);
 
     const candySpecs = [
-      { color: '#ef6b78', position: [-0.34, -0.12, 0.05], rotation: [0.2, 0.4, 0.7], shape: 'wrap' },
-      { color: '#64c8a2', position: [0.3, -0.08, 0.12], rotation: [0.5, 0.2, -0.5], shape: 'wrap' },
-      { color: '#8b5a3c', position: [0.02, -0.03, -0.22], rotation: [0.1, 0.6, 0.15], shape: 'bar' },
-      { color: '#f2c14f', position: [-0.2, 0.08, -0.3], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
-      { color: '#9b7de3', position: [0.28, 0.08, -0.25], rotation: [0.3, 0.1, 0.9], shape: 'bar' },
-      { color: '#f58d4c', position: [0.02, 0.16, 0.18], rotation: [0.2, 0.5, -0.2], shape: 'wrap' },
+      { color: '#ef6b78', accent: '#ffe0e4', position: [-0.34, -0.12, 0.05], rotation: [0.2, 0.4, 0.7], shape: 'wrap' },
+      { color: '#64c8a2', accent: '#e2fff4', position: [0.3, -0.08, 0.12], rotation: [0.5, 0.2, -0.5], shape: 'wrap' },
+      { color: '#6d402d', accent: '#b77b55', position: [0.02, -0.03, -0.22], rotation: [0.1, 0.6, 0.15], shape: 'chocolate' },
+      { color: '#d89a4a', accent: '#5b3827', position: [-0.2, 0.08, -0.3], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
+      { color: '#9b7de3', accent: '#f0e9ff', position: [0.28, 0.08, -0.25], rotation: [0.3, 0.1, 0.9], shape: 'wafer' },
+      { color: '#f58d4c', accent: '#fff0bc', position: [0.02, 0.16, 0.18], rotation: [0.2, 0.5, -0.2], shape: 'lollipop' },
     ] as const;
     this.candyPieces = candySpecs.map((spec) => {
       const candy = new THREE.Group();
       const material = new THREE.MeshStandardMaterial({
         color: spec.color,
+        map: this.createCandyTexture(spec.color, spec.accent),
         roughness: 0.55,
         emissive: spec.color,
         emissiveIntensity: 0.08,
@@ -770,8 +841,52 @@ export class World {
         const cookie = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.09, 16), material);
         cookie.rotation.x = Math.PI / 2;
         candy.add(cookie);
+        for (const [x, y] of [[-0.08, 0.06], [0.06, 0.08], [0.1, -0.05], [-0.04, -0.08]]) {
+          const chip = new THREE.Mesh(
+            new THREE.SphereGeometry(0.028, 7, 5),
+            new THREE.MeshStandardMaterial({ color: '#4a2b20', roughness: 0.8 }),
+          );
+          chip.position.set(x, y, 0.055);
+          candy.add(chip);
+        }
+      } else if (spec.shape === 'chocolate') {
+        const base = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.28), material);
+        candy.add(base);
+        for (const x of [-0.135, 0, 0.135]) {
+          for (const z of [-0.075, 0.075]) {
+            const segment = new THREE.Mesh(
+              new THREE.BoxGeometry(0.11, 0.045, 0.11),
+              new THREE.MeshStandardMaterial({ color: '#8b583d', roughness: 0.68 }),
+            );
+            segment.position.set(x, 0.05, z);
+            candy.add(segment);
+          }
+        }
+      } else if (spec.shape === 'lollipop') {
+        const stick = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.025, 0.025, 0.44, 8),
+          new THREE.MeshStandardMaterial({ color: '#f5eee0', roughness: 0.75 }),
+        );
+        stick.position.y = -0.17;
+        const sweet = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), material);
+        sweet.position.y = 0.12;
+        const spiral = new THREE.Mesh(
+          new THREE.TorusGeometry(0.1, 0.016, 6, 20),
+          new THREE.MeshStandardMaterial({ color: spec.accent, roughness: 0.4 }),
+        );
+        spiral.position.set(0, 0.12, 0.13);
+        candy.add(stick, sweet, spiral);
       } else {
-        candy.add(new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.16, 0.24), material));
+        const wafer = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.24), material);
+        candy.add(wafer);
+        for (const x of [-0.11, 0, 0.11]) {
+          const stripe = new THREE.Mesh(
+            new THREE.BoxGeometry(0.025, 0.17, 0.25),
+            new THREE.MeshStandardMaterial({ color: spec.accent, roughness: 0.7 }),
+          );
+          stripe.position.x = x;
+          candy.add(stripe);
+        }
       }
       candy.position.set(spec.position[0], spec.position[1], spec.position[2]);
       candy.rotation.set(spec.rotation[0], spec.rotation[1], spec.rotation[2]);
@@ -802,6 +917,36 @@ export class World {
     const glow = new THREE.PointLight('#8adcf2', 4, 4);
     glow.position.set(0, 1.45, 0);
     this.fridge.add(glow);
+  }
+
+  private createCandyTexture(baseColor: string, accentColor: string) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.fillStyle = baseColor;
+    context.fillRect(0, 0, 64, 64);
+    context.strokeStyle = accentColor;
+    context.lineWidth = 9;
+    for (let offset = -64; offset < 128; offset += 24) {
+      context.beginPath();
+      context.moveTo(offset, 64);
+      context.lineTo(offset + 64, 0);
+      context.stroke();
+    }
+    const shine = context.createLinearGradient(0, 0, 64, 0);
+    shine.addColorStop(0, 'rgba(255,255,255,0)');
+    shine.addColorStop(0.48, 'rgba(255,255,255,0.35)');
+    shine.addColorStop(0.62, 'rgba(255,255,255,0)');
+    context.fillStyle = shine;
+    context.fillRect(0, 0, 64, 64);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1.5, 1.5);
+    return texture;
   }
 
   private setCandyBoxMood(mood: 'smug' | 'alert' | 'worried') {
@@ -844,31 +989,45 @@ export class World {
 
   private spawnItems(count: number) {
     this.clearItems();
-    const positions = [
-      [-2.3, 5.4], [4.7, 6.7], [6.7, 3.0], [6.7, -4.8],
-      [2.0, -7.2], [-2.0, -7.2], [-7.4, -2.0], [-6.1, 2.2],
-    ];
-    for (let i = 0; i < count; i += 1) {
-      const [x, z] = positions[i];
-      const item = new THREE.Group();
-      const bottle = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.22, 0.26, 0.75, 12),
-        new THREE.MeshStandardMaterial({
-          color: i % 2 ? '#88f2bd' : '#59c7ff',
-          emissive: i % 2 ? '#174c34' : '#123f59',
-          emissiveIntensity: 0.7,
-        }),
-      );
-      const cap = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.13, 0.13, 0.13, 12),
-        new THREE.MeshStandardMaterial({ color: '#e9faff' }),
-      );
-      cap.position.y = 0.44;
-      item.add(bottle, cap);
-      item.position.set(x, 0.75, z);
-      this.scene.add(item);
-      this.items.push({ mesh: item, collected: false });
-    }
+    this.itemSpawnTimer = 4;
+    const shuffled = waterItemPositions
+      .slice(1)
+      .sort(() => Math.random() - 0.5);
+    const positions = [waterItemPositions[0], ...shuffled].slice(0, count);
+    positions.forEach(([x, z], index) => this.spawnWaterItem(x, z, index));
+  }
+
+  private spawnRandomWaterItem() {
+    const activePositions = this.items
+      .filter((item) => !item.collected)
+      .map((item) => item.mesh.position);
+    const candidates = waterItemPositions.filter(([x, z]) =>
+      activePositions.every((position) => Math.hypot(position.x - x, position.z - z) > 1.5),
+    );
+    if (candidates.length === 0) return;
+    const [x, z] = candidates[Math.floor(Math.random() * candidates.length)];
+    this.spawnWaterItem(x, z, this.items.length);
+  }
+
+  private spawnWaterItem(x: number, z: number, variant: number) {
+    const item = new THREE.Group();
+    const bottle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.26, 0.75, 12),
+      new THREE.MeshStandardMaterial({
+        color: variant % 2 ? '#88f2bd' : '#59c7ff',
+        emissive: variant % 2 ? '#174c34' : '#123f59',
+        emissiveIntensity: 0.7,
+      }),
+    );
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.13, 0.13, 12),
+      new THREE.MeshStandardMaterial({ color: '#e9faff' }),
+    );
+    cap.position.y = 0.44;
+    item.add(bottle, cap);
+    item.position.set(x, 0.75, z);
+    this.scene.add(item);
+    this.items.push({ mesh: item, collected: false });
   }
 
   private clearItems() {

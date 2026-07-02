@@ -13,24 +13,24 @@ type Result = {
 const openingLines = [
   { speaker: 'ナレーション', text: '午前0時すぎ。家じゅうが寝静まったころ、台所に小さな足音が近づいていた。' },
   { speaker: '主人公', text: '……よし、誰も起きてないな。' },
-  { speaker: '主人公', text: 'べ、別に夜食じゃない。ただ冷蔵庫の安全確認をするだけだ。' },
+  { speaker: '主人公', text: 'べ、別に夜食じゃない。ただお菓子BOXの安全確認をするだけだ。' },
   { speaker: '主人公', text: '今日はよく頑張ったし、少しくらいごほうびがあってもいいはず……。' },
-  { speaker: '主人公', text: 'ついでにプリンが無事かどうかも確認しておこう。うん、仕方ない。' },
-  { speaker: '冷蔵庫', text: 'その「仕方ない」、昨日も聞いたけど？' },
-  { speaker: '主人公', text: 'うわっ！？ 冷蔵庫がしゃべった！？' },
-  { speaker: '冷蔵庫', text: '最近、運動って言葉を聞いただけで目をそらしてない？' },
+  { speaker: '主人公', text: 'ついでにチョコが無事かどうかも確認しておこう。うん、仕方ない。' },
+  { speaker: 'お菓子BOX', text: 'その「仕方ない」、昨日も聞いたけど？' },
+  { speaker: '主人公', text: 'うわっ！？ お菓子BOXがしゃべった！？' },
+  { speaker: 'お菓子BOX', text: '最近、運動って言葉を聞いただけで目をそらしてない？' },
   { speaker: '主人公', text: '確かに……。生活習慣を見抜かれてる……。' },
-  { speaker: '冷蔵庫', text: '食べたいなら、まずは運動。追いつけたら考えてあげる。' },
+  { speaker: 'お菓子BOX', text: '食べたいなら、まずは少し運動。追いつけたら考えてあげる。' },
   { speaker: '主人公', text: 'は、はぁ〜！？' },
-  { speaker: '冷蔵庫', text: 'ふふん、追いつけるものなら追いついてごらん！' },
+  { speaker: 'お菓子BOX', text: 'ふふん、追いつけるものなら追いついてごらん！' },
   { speaker: 'ナレーション', text: 'こうして、深夜の家で謎の健康鬼ごっこが始まった。' },
 ];
 
-const fridgeLines = [
+const candyBoxLines = [
   'まだ追ってくるの！？',
   'その調子、意外といい運動だよ！',
   'カロリーが燃える音がする……！',
-  'だんだん足が重くなってきた……冷蔵庫なのに！',
+  'だんだん転がるのが重くなってきた……！',
 ];
 
 export class Game {
@@ -74,7 +74,6 @@ export class Game {
       canvas,
       this.required('#joystick'),
       this.required('#joystick-knob'),
-      this.required('#boost-button'),
     );
     window.addEventListener('resize', () => this.world.resize());
     this.showHome();
@@ -104,8 +103,9 @@ export class Game {
     this.overlay.innerHTML = `
       <main class="menu-panel home-panel">
         <div class="eyebrow">MIDNIGHT HEALTH CHASE</div>
-        <h1>逃走する<br><span>冷蔵庫</span></h1>
-        <p class="tagline">深夜、冷蔵庫は走り出した。<br>食べる前に、ほんの少し追いかけよう。</p>
+        <h1 class="home-title">逃げる<br><span>お菓子BOX</span></h1>
+        <p class="tagline">深夜、透明なお菓子BOXは転がり出した。</p>
+        <div class="system-summary"><b>お菓子欲を、追いかけ運動へ。</b><span>今の体調に合わせて遊び、動くほどBOXが遅くなる健康支援システム。</span></div>
         <div class="menu-actions">
           <button class="primary-button" data-action="start"><span>▶</span> はじめから</button>
           <button class="secondary-button" data-action="movie">ムービーを見る</button>
@@ -113,7 +113,7 @@ export class Game {
         </div>
         <p class="health-note">無理をしない。それも、このゲームの大切なルールです。</p>
       </main>
-      <div class="fridge-badge">「今夜はどうする？」</div>
+      <div class="candy-badge">「追いつける？」</div>
     `;
     this.bind('[data-action="start"]', () => this.startOpening('difficulty'));
     this.bind('[data-action="movie"]', () => this.startOpening('home'));
@@ -128,10 +128,10 @@ export class Game {
         <div class="eyebrow">HOW TO PLAY</div>
         <h2>操作説明</h2>
         <div class="help-grid">
-          <section><span class="help-icon">⌨</span><h3>PC</h3><p><b>WASD / 矢印</b> で移動<br><b>Shift</b> でダッシュ<br><b>ドラッグ</b> でカメラ操作</p></section>
-          <section><span class="help-icon">◉</span><h3>スマホ</h3><p><b>左スティック</b> で移動<br><b>右側ドラッグ</b> でカメラ<br><b>BOOST</b> でダッシュ</p></section>
+          <section><span class="help-icon">⌨</span><h3>PC</h3><p><b>WASD / 矢印</b> で移動<br><b>ドラッグ</b> でカメラ操作</p></section>
+          <section><span class="help-icon">◉</span><h3>スマホ</h3><p><b>左スティック</b> で移動<br><b>右側ドラッグ</b> でカメラ操作</p></section>
         </div>
-        <div class="tip-card">水ボトルを拾うと数秒間ブースト。動くほど冷蔵庫は疲れて、追いつきやすくなります。</div>
+        <div class="tip-card">水ボトルを拾った瞬間から数秒間、自動でスピードアップ。動くほどお菓子BOXは遅くなります。</div>
         <button class="primary-button compact" data-action="back">ホームへ戻る</button>
       </main>
     `;
@@ -201,7 +201,7 @@ export class Game {
         <div class="mood-options">
           <button class="mood-button rest" data-mode="rest"><span class="mood-emoji">☾</span><span><b>すごく疲れている</b><small>今日は休息を選ぶ</small></span><i>→</i></button>
           <button class="mood-button easy" data-mode="easy"><span class="mood-emoji">◒</span><span><b>少し疲れている</b><small>ゆっくり追いかける</small></span><i>→</i></button>
-          <button class="mood-button normal" data-mode="normal"><span class="mood-emoji">●</span><span><b>まだ動けそう</b><small>いつものペースで挑戦</small></span><i>→</i></button>
+          <button class="mood-button normal" data-mode="normal"><span class="mood-emoji">●</span><span><b>今日は頑張る</b><small>水ブーストをつないで挑戦</small></span><i>→</i></button>
         </div>
         <p class="health-note">どれを選んでも正解です。体の声を優先してください。</p>
       </main>
@@ -225,10 +225,10 @@ export class Game {
         <div class="eyebrow">REST IS HEALTH, TOO</div>
         <h2>今日は、追いかけない。</h2>
         <p class="rest-copy">体を動かす日も、休む日も、<br>健康にはどちらも必要です。</p>
-        <blockquote>冷蔵庫は静かにうなずいた。<br>「うん。今日はゆっくり休もう。」</blockquote>
+        <blockquote>お菓子BOXは静かに転がるのをやめた。<br>「うん。今日はゆっくり休もう。」</blockquote>
         <div class="rest-actions">
-          <button class="primary-button compact" data-action="home">ホームへ</button>
-          <button class="text-button" data-action="choose">選び直す</button>
+          <button class="primary-button compact" data-action="choose">選び直す</button>
+          <button class="secondary-button compact" data-action="home">ホームへ</button>
         </div>
       </main>
     `;
@@ -248,7 +248,7 @@ export class Game {
     this.setScreen('playing');
     this.modeValue.textContent = DIFFICULTY_SETTINGS[difficulty].label;
     this.updateHud();
-    this.showToast('冷蔵庫を追いかけよう！', 1700);
+    this.showToast('お菓子BOXを追いかけよう！', 1700);
   }
 
   private updateGame(dt: number) {
@@ -256,26 +256,22 @@ export class Game {
     this.boostRemaining = Math.max(0, this.boostRemaining - dt);
     const movement = this.input.getMovement();
     const look = this.input.getLookDelta();
-    const wantsDash = this.input.isDashActive();
     const hasBoost = this.boostRemaining > 0;
-    const speed = hasBoost
-      ? GAME_CONFIG.player.boostSpeed
-      : wantsDash
-        ? GAME_CONFIG.player.dashSpeed
-        : GAME_CONFIG.player.walkSpeed;
+    const speed = hasBoost ? GAME_CONFIG.player.boostSpeed : GAME_CONFIG.player.walkSpeed;
     const moved = this.world.movePlayer(movement.x, movement.y, speed * dt);
 
     if (moved) {
       const gain = hasBoost
         ? GAME_CONFIG.calories.boostPerSecond
-        : wantsDash
-          ? GAME_CONFIG.calories.dashPerSecond
-          : GAME_CONFIG.calories.walkPerSecond;
+        : GAME_CONFIG.calories.walkPerSecond;
       this.calories += gain * dt;
     }
 
     const rate = clamp(this.calories / GAME_CONFIG.calories.maxForScaling, 0, 1);
-    const fridgeRate = Math.max(GAME_CONFIG.fridge.minSpeedRate, 1 - rate * 0.68);
+    const fridgeRate = Math.max(
+      DIFFICULTY_SETTINGS[this.difficulty].minSpeedRate,
+      1 - rate * 0.68,
+    );
     const fridgeSpeed = DIFFICULTY_SETTINGS[this.difficulty].fridgeSpeed * fridgeRate;
     this.world.updateFridge(dt, fridgeSpeed, this.calories);
     this.world.updateCamera(look.x, look.y);
@@ -293,7 +289,7 @@ export class Game {
 
     this.speechTimer -= dt;
     if (this.speechTimer <= 0) {
-      this.showFridgeSpeech(fridgeLines[this.speechIndex % fridgeLines.length]);
+      this.showCandyBoxSpeech(candyBoxLines[this.speechIndex % candyBoxLines.length]);
       this.speechIndex += 1;
       this.speechTimer = 9 + Math.random() * 4;
     }
@@ -333,7 +329,7 @@ export class Game {
       <main class="menu-panel result-panel">
         <div class="result-check">✓</div>
         <div class="eyebrow">CHASE COMPLETE!</div>
-        <h2>冷蔵庫を捕まえた！</h2>
+        <h2>お菓子BOXを捕まえた！</h2>
         <p class="result-message">少し動くだけでも、体はちゃんと反応している。</p>
         <div class="result-stats">
           <div><small>ゲーム内消費カロリー</small><b>${Math.round(result.calories)}<i> kcal</i></b></div>
@@ -358,9 +354,9 @@ export class Game {
     window.setTimeout(() => this.toast.classList.add('hidden'), duration);
   }
 
-  private showFridgeSpeech(message: string) {
+  private showCandyBoxSpeech(message: string) {
     const bubble = document.createElement('div');
-    bubble.className = 'fridge-speech';
+    bubble.className = 'candy-speech';
     bubble.textContent = message;
     document.body.appendChild(bubble);
     window.setTimeout(() => bubble.classList.add('show'), 20);

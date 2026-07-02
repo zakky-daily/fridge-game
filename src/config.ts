@@ -1,19 +1,16 @@
 export const GAME_CONFIG = {
   player: {
     walkSpeed: 4.2,
-    dashSpeed: 6.1,
     boostSpeed: 8.2,
     radius: 0.55,
   },
   fridge: {
     easyBaseSpeed: 3.05,
-    normalBaseSpeed: 4.1,
-    minSpeedRate: 0.42,
+    normalBaseSpeed: 5.6,
     catchDistance: 1.7,
   },
   calories: {
     walkPerSecond: 2.2,
-    dashPerSecond: 3.8,
     boostPerSecond: 5.2,
     maxForScaling: 80,
   },
@@ -28,14 +25,19 @@ export const DIFFICULTY_SETTINGS = {
   easy: {
     fridgeSpeed: GAME_CONFIG.fridge.easyBaseSpeed,
     itemCount: 8,
+    minSpeedRate: 0.42,
     label: '少し疲れている',
   },
   normal: {
     fridgeSpeed: GAME_CONFIG.fridge.normalBaseSpeed,
     itemCount: 5,
-    label: 'まだ動けそう',
+    minSpeedRate: 0.8,
+    label: '今日は頑張る',
   },
-} satisfies Record<Difficulty, { fridgeSpeed: number; itemCount: number; label: string }>;
+} satisfies Record<
+  Difficulty,
+  { fridgeSpeed: number; itemCount: number; minSpeedRate: number; label: string }
+>;
 
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));

@@ -108,6 +108,16 @@ h1 span {
   color: var(--mint);
 }
 
+.home-title {
+  font-size: clamp(3.5rem, 7vw, 6.2rem);
+}
+
+.home-title span {
+  white-space: nowrap;
+  font-size: 0.74em;
+  letter-spacing: -0.06em;
+}
+
 h2 {
   margin-bottom: 13px;
   font-size: clamp(2rem, 5vw, 3.1rem);
@@ -122,8 +132,30 @@ h2 {
 }
 
 .tagline {
-  margin-bottom: 28px;
+  margin-bottom: 10px;
   font-weight: 500;
+}
+
+.system-summary {
+  display: grid;
+  gap: 3px;
+  width: min(100%, 360px);
+  margin-bottom: 18px;
+  padding: 11px 14px;
+  border: 1px solid rgba(101, 230, 180, 0.2);
+  border-radius: 13px;
+  background: rgba(34, 100, 80, 0.12);
+}
+
+.system-summary b {
+  color: var(--mint);
+  font-size: 0.78rem;
+}
+
+.system-summary span {
+  color: #a8bbc4;
+  font-size: 0.67rem;
+  line-height: 1.55;
 }
 
 .menu-actions {
@@ -182,7 +214,7 @@ button {
   font-size: 0.72rem;
 }
 
-.fridge-badge {
+.candy-badge {
   position: absolute;
   right: 15vw;
   bottom: 17vh;
@@ -321,7 +353,7 @@ button {
   font-weight: 900;
 }
 
-#novel-speaker[data-speaker='冷蔵庫'] {
+#novel-speaker[data-speaker='お菓子BOX'] {
   color: #2c1c08;
   background: #f0b85c;
 }
@@ -608,8 +640,7 @@ blockquote {
   opacity: 1;
 }
 
-.joystick,
-.boost-button {
+.joystick {
   pointer-events: auto;
 }
 
@@ -636,28 +667,8 @@ blockquote {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
 }
 
-.boost-button {
-  position: absolute;
-  right: max(28px, env(safe-area-inset-right));
-  bottom: max(40px, env(safe-area-inset-bottom));
-  width: 84px;
-  height: 84px;
-  border: 2px solid rgba(101, 230, 180, 0.5);
-  border-radius: 50%;
-  color: #a4f1d4;
-  background: rgba(17, 58, 51, 0.68);
-  font-size: 0.68rem;
-  font-weight: 900;
-  box-shadow: 0 0 28px rgba(101, 230, 180, 0.12);
-}
-
-.boost-button.is-active {
-  transform: scale(0.94);
-  background: rgba(35, 127, 101, 0.85);
-}
-
 .game-toast,
-.fridge-speech {
+.candy-speech {
   position: fixed;
   z-index: 4;
   left: 50%;
@@ -676,7 +687,7 @@ blockquote {
   background: var(--mint);
 }
 
-.fridge-speech {
+.candy-speech {
   top: 21%;
   opacity: 0;
   color: #172338;
@@ -684,7 +695,7 @@ blockquote {
   transform: translate(-50%, 8px);
 }
 
-.fridge-speech.show {
+.candy-speech.show {
   opacity: 1;
   transform: translate(-50%, 0);
 }
@@ -791,8 +802,8 @@ blockquote {
   .home-panel {
     align-self: end;
     justify-self: center;
-    margin: 0 0 3vh;
-    padding: 22px;
+    margin: 0 0 2vh;
+    padding: 17px 22px;
     background: linear-gradient(0deg, rgba(4, 11, 22, 0.95), rgba(5, 13, 25, 0.72));
     border: 1px solid rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(8px);
@@ -802,9 +813,33 @@ blockquote {
     font-size: 3.7rem;
   }
 
+  .home-title {
+    margin-bottom: 10px;
+    font-size: 2.72rem;
+  }
+
   .tagline {
-    margin-bottom: 16px;
+    margin-bottom: 8px;
     font-size: 0.78rem;
+  }
+
+  .system-summary {
+    margin-bottom: 9px;
+    padding: 7px 11px;
+  }
+
+  .system-summary span {
+    font-size: 0.61rem;
+  }
+
+  .home-panel .primary-button,
+  .home-panel .secondary-button,
+  .home-panel .text-button {
+    min-height: 46px;
+  }
+
+  .home-panel .health-note {
+    display: none;
   }
 
   .menu-actions {
@@ -816,8 +851,8 @@ blockquote {
     text-align: center;
   }
 
-  .fridge-badge {
-    top: 21vh;
+  .candy-badge {
+    top: 13vh;
     right: 10vw;
     bottom: auto;
   }

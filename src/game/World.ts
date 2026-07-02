@@ -42,12 +42,16 @@ export class World {
   readonly fridge = new THREE.Group();
 
   private playerBody = new THREE.Group();
-  private fridgeFace = new THREE.Group();
+  private candyBoxFace = new THREE.Group();
+  private candyShell = new THREE.Group();
+  private candyPayload = new THREE.Group();
+  private candyPieces: THREE.Object3D[] = [];
   private items: Item[] = [];
   private colliders: BoxCollider[] = [];
   private waypointIndex = 0;
   private waypointDirection: 1 | -1 = 1;
   private openingEscapeIndex = 0;
+  private openingPlayerStopX = -1;
   private cameraYaw = -Math.PI / 2;
   private cameraPitch = 0.34;
   private clockTime = 0;
@@ -63,7 +67,7 @@ export class World {
     this.scene.fog = new THREE.Fog('#07101f', 15, 38);
     this.buildHouse();
     this.buildPlayer();
-    this.buildFridge();
+    this.buildCandyBox();
     this.scene.add(this.player, this.fridge);
     this.resize();
   }
@@ -72,6 +76,7 @@ export class World {
     const width = window.innerWidth;
     const height = window.innerHeight;
     this.camera.aspect = width / Math.max(height, 1);
+    this.camera.fov = this.camera.aspect < 0.75 ? 78 : 60;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
@@ -80,28 +85,34 @@ export class World {
   resetForOpening() {
     this.clearItems();
     this.openingEscapeIndex = 0;
-    this.player.position.set(-4, 0, 6.85);
+    const narrow = this.camera.aspect < 0.75;
+    this.openingPlayerStopX = narrow ? -0.65 : -0.55;
+    this.player.position.set(narrow ? -1 : -1.65, 0, 6.85);
     this.player.rotation.y = -Math.PI / 2;
-    this.fridge.position.set(0.8, 0, 6.85);
+    this.player.scale.setScalar(narrow ? 0.76 : 0.9);
+    this.fridge.position.set(narrow ? 1 : 1.15, 0, 6.85);
     this.fridge.rotation.set(0, 0, 0);
+    this.fridge.scale.setScalar(narrow ? 0.8 : 0.9);
+    this.candyShell.rotation.set(0, 0, 0);
     this.player.visible = true;
     this.fridge.visible = true;
-    this.setFridgeMood('smug');
+    this.setCandyBoxMood('smug');
     // Shoot across the open south corridor, away from the kitchen partition.
-    const narrow = this.camera.aspect < 0.75;
-    this.camera.position.set(narrow ? 1.2 : 3.6, narrow ? 3.5 : 3.9, narrow ? 9.15 : 9.2);
-    this.camera.lookAt(narrow ? 1.2 : 0.3, narrow ? 0.4 : 1.25, narrow ? 6.35 : 6.2);
+    this.camera.position.set(narrow ? 0 : 3.6, narrow ? 5.4 : 3.9, narrow ? 9.2 : 9.2);
+    this.camera.lookAt(narrow ? 0 : 0.3, narrow ? -5.5 : 1.25, narrow ? 6.35 : 6.2);
   }
 
   animateOpening(stage: number, dt: number) {
     this.clockTime += dt;
     if (stage <= 1) {
-      this.player.position.x = Math.min(-1, this.player.position.x + dt * 0.65);
+      this.player.position.x = Math.min(
+        this.openingPlayerStopX,
+        this.player.position.x + dt * 0.65,
+      );
       this.player.rotation.y = -Math.PI / 2;
     }
     if (stage >= 5) {
-      this.setFridgeMood(stage >= 11 ? 'worried' : 'smug');
-      this.fridge.rotation.z = Math.sin(this.clockTime * 8) * 0.035;
+      this.setCandyBoxMood(stage >= 11 ? 'worried' : 'smug');
     }
     if (stage >= 11 && this.openingEscapeIndex < openingEscapePath.length) {
       const target = openingEscapePath[this.openingEscapeIndex];
@@ -111,8 +122,9 @@ export class World {
         this.openingEscapeIndex += 1;
       } else {
         direction.normalize();
-        this.fridge.position.addScaledVector(direction, Math.min(remaining, dt * 4.2));
-        this.fridge.rotation.y = Math.atan2(direction.x, direction.z);
+        const travel = Math.min(remaining, dt * 4.2);
+        this.fridge.position.addScaledVector(direction, travel);
+        this.rollCandyBox(direction, travel);
       }
     }
     this.animateCharacters(dt, false);
@@ -121,9 +133,12 @@ export class World {
   resetForGame(difficulty: Difficulty) {
     this.player.visible = true;
     this.fridge.visible = true;
+    this.player.scale.setScalar(1);
+    this.fridge.scale.setScalar(1);
     this.player.position.set(-4.2, 0, 7.0);
     this.fridge.position.set(2.5, 0, 7.0);
     this.fridge.rotation.set(0, 0, 0);
+    this.candyShell.rotation.set(0, 0, 0);
     this.player.rotation.set(0, 0, 0);
     this.setPlayerShape(0, true);
     this.waypointIndex = 1;
@@ -131,7 +146,7 @@ export class World {
     // Start directly behind the player, facing the fridge along the first corridor.
     this.cameraYaw = -Math.PI / 2;
     this.cameraPitch = 0.34;
-    this.setFridgeMood('smug');
+    this.setCandyBoxMood('smug');
     this.spawnItems(DIFFICULTY_SETTINGS[difficulty].itemCount);
     this.updateCamera(0, 0, true);
   }
@@ -194,17 +209,18 @@ export class World {
       direction.normalize();
       const next = this.fridge.position.clone().addScaledVector(direction, effectiveSpeed * dt);
       if (this.canOccupy(next.x, next.z, 0.8)) {
+        const travel = next.distanceTo(this.fridge.position);
         this.fridge.position.copy(next);
+        this.rollCandyBox(direction, travel);
       } else {
         // Reversing keeps the fridge moving even if it is displaced into a
         // collider corner by future layout changes.
         this.waypointDirection = this.waypointDirection === 1 ? -1 : 1;
         this.waypointIndex = this.wrapWaypoint(this.waypointIndex + this.waypointDirection);
       }
-      this.fridge.rotation.y = Math.atan2(direction.x, direction.z);
     }
 
-    this.setFridgeMood(calorieRate > 0.68 ? 'worried' : calorieRate > 0.3 ? 'alert' : 'smug');
+    this.setCandyBoxMood(calorieRate > 0.68 ? 'worried' : calorieRate > 0.3 ? 'alert' : 'smug');
     this.animateCharacters(dt, true);
   }
 
@@ -472,9 +488,9 @@ export class World {
 
   private buildBedroom() {
     this.addFurniture(-4.65, 0, -5.25, 3.05, 0.46, 2.45, '#725244');
-    this.addFurniture(-4.65, 0.44, -5.15, 2.82, 0.34, 2.15, '#d7d0c2', false);
-    this.addFurniture(-4.65, 0.73, -6.05, 2.82, 0.18, 0.72, '#e8e2d8', false);
-    this.addFurniture(-4.65, 0.7, -4.88, 2.86, 0.08, 1.25, '#7085a5', false);
+    this.addFurniture(-4.65, 0.5, -5.15, 2.82, 0.3, 2.15, '#d7d0c2', false);
+    this.addFurniture(-4.65, 0.84, -6.05, 2.7, 0.16, 0.68, '#e8e2d8', false);
+    this.addFurniture(-4.65, 0.82, -4.88, 2.68, 0.08, 1.18, '#7085a5', false);
 
     this.addFurniture(-9.05, 0, -4.45, 1.05, 2.45, 2.65, '#58463c');
     for (const z of [-5.1, -3.8]) {
@@ -659,50 +675,139 @@ export class World {
     this.player.add(marker);
   }
 
-  private buildFridge() {
-    const white = new THREE.MeshStandardMaterial({ color: '#e8f1f4', roughness: 0.45 });
-    const dark = new THREE.MeshStandardMaterial({ color: '#17202e', roughness: 0.5 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.35, 1.05), white);
-    body.position.y = 1.45;
-    body.castShadow = true;
-    this.fridge.add(body);
+  private buildCandyBox() {
+    const dark = new THREE.MeshStandardMaterial({ color: '#182438', roughness: 0.45 });
+    const shellMaterial = new THREE.MeshPhysicalMaterial({
+      color: '#bcecff',
+      transparent: true,
+      opacity: 0.28,
+      transmission: 0.5,
+      roughness: 0.08,
+      metalness: 0.05,
+      clearcoat: 1,
+      clearcoatRoughness: 0.08,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(1.02, 36, 26), shellMaterial);
+    shell.castShadow = true;
+    shell.renderOrder = 3;
+    this.candyShell.add(shell);
 
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.035, 0.04), dark);
-    seam.position.set(0, 1.65, 0.54);
-    this.fridge.add(seam);
+    const hoopMaterial = new THREE.MeshStandardMaterial({
+      color: '#79c9dc',
+      transparent: true,
+      opacity: 0.72,
+      roughness: 0.3,
+    });
+    const equator = new THREE.Mesh(new THREE.TorusGeometry(1.025, 0.025, 8, 48), hoopMaterial);
+    equator.rotation.x = Math.PI / 2;
+    const meridian = new THREE.Mesh(new THREE.TorusGeometry(1.025, 0.025, 8, 48), hoopMaterial);
+    meridian.rotation.y = Math.PI / 2;
+    this.candyShell.add(equator, meridian);
+
+    const handle = new THREE.Mesh(
+      new THREE.TorusGeometry(0.36, 0.065, 10, 28, Math.PI),
+      new THREE.MeshStandardMaterial({ color: '#f0b65f', roughness: 0.45 }),
+    );
+    handle.position.y = 1.03;
+    handle.castShadow = true;
+    this.candyShell.add(handle);
+    for (const side of [-1, 1]) {
+      const connector = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.065, 0.065, 0.22, 10),
+        new THREE.MeshStandardMaterial({ color: '#f0b65f', roughness: 0.45 }),
+      );
+      connector.position.set(side * 0.36, 0.98, 0);
+      this.candyShell.add(connector);
+    }
+    this.candyShell.position.y = 1.04;
+
+    const bowlMaterial = new THREE.MeshStandardMaterial({
+      color: '#f7f5ee',
+      roughness: 0.62,
+      side: THREE.DoubleSide,
+    });
+    const bowl = new THREE.Mesh(
+      new THREE.SphereGeometry(0.76, 32, 18, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
+      bowlMaterial,
+    );
+    bowl.castShadow = true;
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.76, 0.045, 8, 36),
+      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.45 }),
+    );
+    rim.rotation.x = Math.PI / 2;
+    this.candyPayload.add(bowl, rim);
+
+    const candySpecs = [
+      { color: '#ef6b78', position: [-0.34, -0.12, 0.05], rotation: [0.2, 0.4, 0.7], shape: 'wrap' },
+      { color: '#64c8a2', position: [0.3, -0.08, 0.12], rotation: [0.5, 0.2, -0.5], shape: 'wrap' },
+      { color: '#8b5a3c', position: [0.02, -0.03, -0.22], rotation: [0.1, 0.6, 0.15], shape: 'bar' },
+      { color: '#f2c14f', position: [-0.2, 0.08, -0.3], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
+      { color: '#9b7de3', position: [0.28, 0.08, -0.25], rotation: [0.3, 0.1, 0.9], shape: 'bar' },
+      { color: '#f58d4c', position: [0.02, 0.16, 0.18], rotation: [0.2, 0.5, -0.2], shape: 'wrap' },
+    ] as const;
+    this.candyPieces = candySpecs.map((spec) => {
+      const candy = new THREE.Group();
+      const material = new THREE.MeshStandardMaterial({
+        color: spec.color,
+        roughness: 0.55,
+        emissive: spec.color,
+        emissiveIntensity: 0.08,
+      });
+      if (spec.shape === 'wrap') {
+        const center = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.22, 5, 10), material);
+        center.rotation.z = Math.PI / 2;
+        candy.add(center);
+        for (const side of [-1, 1]) {
+          const wrapper = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.17, 8), material);
+          wrapper.rotation.z = side * Math.PI / 2;
+          wrapper.position.x = side * 0.25;
+          candy.add(wrapper);
+        }
+      } else if (spec.shape === 'cookie') {
+        const cookie = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.09, 16), material);
+        cookie.rotation.x = Math.PI / 2;
+        candy.add(cookie);
+      } else {
+        candy.add(new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.16, 0.24), material));
+      }
+      candy.position.set(spec.position[0], spec.position[1], spec.position[2]);
+      candy.rotation.set(spec.rotation[0], spec.rotation[1], spec.rotation[2]);
+      candy.scale.setScalar(0.82);
+      candy.traverse((object) => {
+        if (object instanceof THREE.Mesh) object.castShadow = true;
+      });
+      this.candyPayload.add(candy);
+      return candy;
+    });
 
     for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), dark);
-      eye.position.set(side * 0.28, 2.15, 0.57);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 8), dark);
+      eye.position.set(side * 0.22, -0.18, 0.7);
       eye.scale.y = 1.15;
       eye.name = `eye-${side}`;
-      this.fridgeFace.add(eye);
-
-      const foot = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.28, 4, 8), dark);
-      foot.position.set(side * 0.42, 0.16, 0);
-      foot.rotation.z = side * 0.18;
-      foot.name = `foot-${side}`;
-      this.fridge.add(foot);
+      this.candyBoxFace.add(eye);
     }
-
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.08, 0.05), dark);
-    mouth.position.set(0, 1.82, 0.58);
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.065, 0.04), dark);
+    mouth.position.set(0, -0.38, 0.68);
     mouth.name = 'mouth';
-    this.fridgeFace.add(mouth);
+    this.candyBoxFace.add(mouth);
 
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.72, 0.09), dark);
-    handle.position.set(0.54, 1.3, 0.59);
-    this.fridge.add(handle, this.fridgeFace);
+    this.candyPayload.add(this.candyBoxFace);
+    this.candyPayload.position.y = 1.04;
+    this.fridge.add(this.candyPayload, this.candyShell);
 
-    const glow = new THREE.PointLight('#d7f8ff', 3, 4);
-    glow.position.set(0, 2.3, 1);
+    const glow = new THREE.PointLight('#8adcf2', 4, 4);
+    glow.position.set(0, 1.45, 0);
     this.fridge.add(glow);
   }
 
-  private setFridgeMood(mood: 'smug' | 'alert' | 'worried') {
-    const mouth = this.fridgeFace.getObjectByName('mouth');
-    const left = this.fridgeFace.getObjectByName('eye--1');
-    const right = this.fridgeFace.getObjectByName('eye-1');
+  private setCandyBoxMood(mood: 'smug' | 'alert' | 'worried') {
+    const mouth = this.candyBoxFace.getObjectByName('mouth');
+    const left = this.candyBoxFace.getObjectByName('eye--1');
+    const right = this.candyBoxFace.getObjectByName('eye-1');
     if (!mouth || !left || !right) return;
     if (mood === 'smug') {
       mouth.rotation.z = -0.12;
@@ -724,12 +829,17 @@ export class World {
 
   private animateCharacters(dt: number, running: boolean) {
     this.clockTime += dt;
-    const pace = running ? 10 : 3;
-    this.fridge.position.y = Math.abs(Math.sin(this.clockTime * pace)) * (running ? 0.1 : 0.025);
-    for (const side of [-1, 1]) {
-      const foot = this.fridge.getObjectByName(`foot-${side}`);
-      if (foot) foot.rotation.x = Math.sin(this.clockTime * pace + side) * (running ? 0.5 : 0.08);
-    }
+    this.fridge.position.y = 0;
+    const amount = running ? 0.045 : 0.018;
+    this.candyPieces.forEach((candy, index) => {
+      candy.rotation.z += Math.sin(this.clockTime * 4 + index) * amount * dt;
+    });
+  }
+
+  private rollCandyBox(direction: THREE.Vector3, distance: number) {
+    if (distance <= 0 || direction.lengthSq() === 0) return;
+    const axis = new THREE.Vector3(direction.z, 0, -direction.x).normalize();
+    this.candyShell.rotateOnWorldAxis(axis, distance / 1.02);
   }
 
   private spawnItems(count: number) {

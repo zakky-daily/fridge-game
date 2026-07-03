@@ -164,15 +164,15 @@ export class Game {
       </button>
     `;
     this.updateOpeningText();
-    this.bind('[data-action="next"]', this.nextOpeningLine);
+    this.required<HTMLElement>('[data-action="next"]').addEventListener('click', this.nextOpeningLine);
     this.bind('[data-action="skip"]', this.finishOpening);
   }
 
   private updateOpening(dt: number) {
     this.openingAutoTimer += dt;
     const look = this.input.getLookDelta();
-    this.world.updateOpeningLook(look.x, look.y);
     this.world.animateOpening(this.openingIndex, dt);
+    this.world.updateOpeningLook(look.x, look.y);
     if (this.openingAutoTimer > 4.8) this.nextOpeningLine();
   }
 
@@ -288,7 +288,7 @@ export class Game {
     );
     const fridgeSpeed = DIFFICULTY_SETTINGS[this.difficulty].fridgeSpeed * fridgeRate;
     this.world.updateFridge(dt, fridgeSpeed, this.calories);
-    this.world.updateCamera(look.x, look.y);
+    this.world.updateCamera(look.x, look.y, dt);
     this.world.setPlayerShape(this.calories);
     this.world.updateItems(dt);
 

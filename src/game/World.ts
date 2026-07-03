@@ -13,21 +13,39 @@ type BoxCollider = {
   maxZ: number;
 };
 
-// A wide, connected loop through every room. Furniture is deliberately kept
-// outside this route so the candy box never gets trapped against a collider.
-const waypoints = [
-  new THREE.Vector3(-2.5, 0, 7.0),
-  new THREE.Vector3(3.4, 0, 7.0),
-  new THREE.Vector3(6.7, 0, 5.4),
-  new THREE.Vector3(6.7, 0, 1.1),
-  new THREE.Vector3(6.8, 0, -5.8),
-  new THREE.Vector3(3.2, 0, -5.8),
-  new THREE.Vector3(-1.2, 0, -5.8),
-  new THREE.Vector3(-7.4, 0, -5.8),
-  new THREE.Vector3(-7.7, 0, -2.4),
-  new THREE.Vector3(-6.3, 0, 1.0),
-  new THREE.Vector3(-6.1, 0, 5.5),
+type NavigationNode = {
+  id: string;
+  position: THREE.Vector3;
+  links: string[];
+};
+
+const navigationNodes: NavigationNode[] = [
+  { id: 'south-west', position: new THREE.Vector3(-7.2, 0, 7), links: ['south-mid', 'living-west'] },
+  { id: 'south-mid', position: new THREE.Vector3(-1.2, 0, 7), links: ['south-west', 'south-east', 'living-east', 'center-north'] },
+  { id: 'south-east', position: new THREE.Vector3(3, 0, 7), links: ['south-mid', 'kitchen-east', 'kitchen-door'] },
+  { id: 'kitchen-east', position: new THREE.Vector3(6.8, 0, 7), links: ['south-east', 'kitchen-mid'] },
+  { id: 'kitchen-mid', position: new THREE.Vector3(6.8, 0, 4.5), links: ['kitchen-east', 'kitchen-door', 'east-center'] },
+  { id: 'kitchen-door', position: new THREE.Vector3(3.2, 0, 2.85), links: ['south-east', 'kitchen-mid', 'center-north', 'dining-north'] },
+  { id: 'center-north', position: new THREE.Vector3(0, 0, 2.85), links: ['south-mid', 'kitchen-door', 'living-east', 'center'] },
+  { id: 'living-east', position: new THREE.Vector3(-2, 0, 5.8), links: ['south-mid', 'center-north', 'living-west'] },
+  { id: 'living-west', position: new THREE.Vector3(-6.6, 0, 5.8), links: ['south-west', 'living-east', 'living-south'] },
+  { id: 'living-south', position: new THREE.Vector3(-6.8, 0, 2), links: ['living-west', 'bedroom-entry'] },
+  { id: 'bedroom-entry', position: new THREE.Vector3(-3.4, 0, 0.2), links: ['living-south', 'bedroom-door', 'center'] },
+  { id: 'bedroom-door', position: new THREE.Vector3(-3.4, 0, -2.7), links: ['bedroom-entry', 'bedroom-west', 'bedroom-mid'] },
+  { id: 'bedroom-west', position: new THREE.Vector3(-7, 0, -2.7), links: ['bedroom-door', 'bedroom-south-west'] },
+  { id: 'bedroom-south-west', position: new THREE.Vector3(-7, 0, -5.5), links: ['bedroom-west', 'bedroom-mid'] },
+  { id: 'bedroom-mid', position: new THREE.Vector3(-3, 0, -5.5), links: ['bedroom-door', 'bedroom-south-west', 'center-south'] },
+  { id: 'center-south', position: new THREE.Vector3(0, 0, -5.5), links: ['bedroom-mid', 'dining-south-west', 'center-lower'] },
+  { id: 'dining-south-west', position: new THREE.Vector3(1.2, 0, -4.5), links: ['center-south', 'dining-south-east'] },
+  { id: 'dining-south-east', position: new THREE.Vector3(6.8, 0, -4.5), links: ['dining-south-west', 'east-center'] },
+  { id: 'east-center', position: new THREE.Vector3(6.8, 0, 0), links: ['dining-south-east', 'kitchen-mid', 'dining-north'] },
+  { id: 'dining-north', position: new THREE.Vector3(3.5, 0, 0), links: ['kitchen-door', 'east-center', 'center-east'] },
+  { id: 'center-east', position: new THREE.Vector3(2.5, 0, -0.9), links: ['dining-north', 'center-lower'] },
+  { id: 'center-lower', position: new THREE.Vector3(0, 0, -0.9), links: ['center-east', 'center', 'center-south'] },
+  { id: 'center', position: new THREE.Vector3(0, 0, 0.2), links: ['center-lower', 'center-north', 'bedroom-entry'] },
 ];
+
+const navigationNodeMap = new Map(navigationNodes.map((node) => [node.id, node]));
 
 const openingEscapePath = [
   new THREE.Vector3(3.5, 0, 6.85),
@@ -64,15 +82,19 @@ export class World {
   private items: Item[] = [];
   private itemSpawnTimer = 4;
   private colliders: BoxCollider[] = [];
-  private waypointIndex = 0;
-  private waypointDirection: 1 | -1 = 1;
+  private candyCurrentNodeId = 'south-east';
+  private candyTargetNodeId = 'kitchen-east';
+  private candyPreviousNodeId: string | null = 'south-mid';
   private openingEscapeIndex = 0;
   private openingPlayerStopX = -1;
-  private openingLookYaw = 0;
-  private openingLookPitch = 0;
-  private openingCameraBase = new THREE.Quaternion();
+  private openingOrbitYaw = 0;
+  private openingOrbitBaseYaw = 0;
+  private openingOrbitPitch = 0.35;
+  private openingOrbitDistance = 5;
   private cameraYaw = -Math.PI / 2;
+  private cameraYawOffset = 0;
   private cameraPitch = 0.34;
+  private playerFacingYaw = Math.PI / 2;
   private clockTime = 0;
   private playerBodyMesh!: THREE.Mesh;
   private playerBodyBasePositions = new Float32Array();
@@ -86,6 +108,7 @@ export class World {
     this.scene.background = new THREE.Color('#07101f');
     this.scene.fog = new THREE.Fog('#07101f', 15, 38);
     this.buildHouse();
+    this.validateNavigationGraph();
     this.buildPlayer();
     this.buildCandyBox();
     this.scene.add(this.player, this.fridge);
@@ -119,18 +142,32 @@ export class World {
     this.setCandyBoxMood('smug');
     // Shoot across the open south corridor, away from the kitchen partition.
     this.camera.position.set(narrow ? 0 : 3.6, narrow ? 5.4 : 3.9, narrow ? 9.2 : 9.2);
-    this.camera.lookAt(narrow ? 0 : 0.3, narrow ? -5.5 : 1.25, narrow ? 6.35 : 6.2);
-    this.openingLookYaw = 0;
-    this.openingLookPitch = 0;
-    this.openingCameraBase.copy(this.camera.quaternion);
+    const target = this.getOpeningCameraTarget();
+    const offset = this.camera.position.clone().sub(target);
+    this.openingOrbitDistance = offset.length();
+    this.openingOrbitYaw = Math.atan2(offset.x, offset.z);
+    this.openingOrbitBaseYaw = this.openingOrbitYaw;
+    this.openingOrbitPitch = Math.asin(offset.y / this.openingOrbitDistance);
+    this.updateOpeningLook(0, 0);
   }
 
   updateOpeningLook(deltaX: number, deltaY: number) {
-    this.openingLookYaw = clamp(this.openingLookYaw - deltaX * 0.004, -0.75, 0.75);
-    this.openingLookPitch = clamp(this.openingLookPitch - deltaY * 0.003, -0.32, 0.3);
-    this.camera.quaternion.copy(this.openingCameraBase);
-    this.camera.rotateY(this.openingLookYaw);
-    this.camera.rotateX(this.openingLookPitch);
+    this.openingOrbitYaw = clamp(
+      this.openingOrbitYaw - deltaX * 0.004,
+      this.openingOrbitBaseYaw - 0.5,
+      this.openingOrbitBaseYaw + 0.5,
+    );
+    this.openingOrbitPitch = clamp(this.openingOrbitPitch + deltaY * 0.003, 0.12, 0.78);
+    const target = this.getOpeningCameraTarget();
+    const horizontalDistance = Math.cos(this.openingOrbitPitch) * this.openingOrbitDistance;
+    this.camera.position.set(
+      target.x + Math.sin(this.openingOrbitYaw) * horizontalDistance,
+      target.y + Math.sin(this.openingOrbitPitch) * this.openingOrbitDistance,
+      target.z + Math.cos(this.openingOrbitYaw) * horizontalDistance,
+    );
+    this.camera.position.x = clamp(this.camera.position.x, -9.25, 9.25);
+    this.camera.position.z = clamp(this.camera.position.z, -9.25, 9.25);
+    this.camera.lookAt(target);
   }
 
   animateOpening(stage: number, dt: number) {
@@ -170,21 +207,31 @@ export class World {
     this.fridge.position.set(2.5, 0, 7.0);
     this.fridge.rotation.set(0, 0, 0);
     this.candyShell.rotation.set(0, 0, 0);
-    this.player.rotation.set(0, 0, 0);
+    this.playerFacingYaw = Math.PI / 2;
+    this.player.rotation.set(0, this.playerFacingYaw, 0);
     this.setPlayerShape(0, true);
-    this.waypointIndex = 1;
-    this.waypointDirection = 1;
+    this.candyCurrentNodeId = 'south-east';
+    this.candyTargetNodeId = 'kitchen-east';
+    this.candyPreviousNodeId = 'south-mid';
     // Start directly behind the player, facing the fridge along the first corridor.
     this.cameraYaw = -Math.PI / 2;
+    this.cameraYawOffset = 0;
     this.cameraPitch = 0.34;
     this.setCandyBoxMood('smug');
     this.spawnItems(DIFFICULTY_SETTINGS[difficulty].itemCount);
-    this.updateCamera(0, 0, true);
+    this.updateCamera(0, 0, 0, true);
   }
 
-  updateCamera(deltaX: number, deltaY: number, immediate = false) {
-    this.cameraYaw -= deltaX * 0.005;
+  updateCamera(deltaX: number, deltaY: number, dt: number, immediate = false) {
+    this.cameraYawOffset = clamp(this.cameraYawOffset - deltaX * 0.004, -0.72, 0.72);
+    if (Math.abs(deltaX) < 0.01) {
+      this.cameraYawOffset *= Math.exp(-dt * 1.9);
+    }
     this.cameraPitch = clamp(this.cameraPitch + deltaY * 0.003, 0.12, 0.72);
+    const targetYaw = this.playerFacingYaw + Math.PI + this.cameraYawOffset;
+    this.cameraYaw = immediate
+      ? targetYaw
+      : this.lerpAngle(this.cameraYaw, targetYaw, 1 - Math.exp(-dt * 8));
     const distance = 6.2;
     const target = this.player.position.clone().add(new THREE.Vector3(0, 1.35, 0));
     const offset = new THREE.Vector3(
@@ -214,28 +261,22 @@ export class World {
     if (this.canOccupy(this.player.position.x, next.z, GAME_CONFIG.player.radius)) {
       this.player.position.z = next.z;
     }
-    this.player.rotation.y = Math.atan2(direction.x, direction.z);
+    this.playerFacingYaw = Math.atan2(direction.x, direction.z);
+    this.player.rotation.y = this.playerFacingYaw;
     return true;
   }
 
   updateFridge(dt: number, speed: number, calories: number) {
     const playerDistance = this.player.position.distanceTo(this.fridge.position);
-    if (playerDistance < 4.8) {
-      const nextIndex = this.wrapWaypoint(this.waypointIndex + 1);
-      const previousIndex = this.wrapWaypoint(this.waypointIndex - 1);
-      const nextSafety = waypoints[nextIndex].distanceTo(this.player.position);
-      const previousSafety = waypoints[previousIndex].distanceTo(this.player.position);
-      this.waypointDirection = nextSafety >= previousSafety ? 1 : -1;
-    }
-
-    const target = waypoints[this.waypointIndex];
+    const target = this.requireNavigationNode(this.candyTargetNodeId).position;
     const direction = target.clone().sub(this.fridge.position).setY(0);
     const calorieRate = clamp(calories / GAME_CONFIG.calories.maxForScaling, 0, 1);
     const escapeBurst =
       1 + clamp((5.5 - playerDistance) / 4, 0, 0.32) * (1 - calorieRate);
     const effectiveSpeed = speed * escapeBurst;
-    if (direction.length() < 0.7) {
-      this.waypointIndex = this.wrapWaypoint(this.waypointIndex + this.waypointDirection);
+    if (direction.length() < 0.28) {
+      this.fridge.position.copy(target);
+      this.chooseNextCandyNode();
     } else {
       direction.normalize();
       const next = this.fridge.position.clone().addScaledVector(direction, effectiveSpeed * dt);
@@ -244,10 +285,7 @@ export class World {
         this.fridge.position.copy(next);
         this.rollCandyBox(direction, travel);
       } else {
-        // Reversing keeps the fridge moving even if it is displaced into a
-        // collider corner by future layout changes.
-        this.waypointDirection = this.waypointDirection === 1 ? -1 : 1;
-        this.waypointIndex = this.wrapWaypoint(this.waypointIndex + this.waypointDirection);
+        this.candyTargetNodeId = this.candyCurrentNodeId;
       }
     }
 
@@ -408,11 +446,11 @@ export class World {
     this.addWall(10, 0, 0.35, 20);
 
     // Wide openings preserve an uninterrupted chase route between rooms.
-    this.addWall(1.55, 4.85, 0.22, 2.25);
-    this.addWall(1.55, 1.0, 0.22, 1.8);
+    this.addWall(1.55, 5.1, 0.22, 1.75);
+    this.addWall(1.55, 0.8, 0.22, 1.4);
     this.addDoorFrame(1.55, 2.85, Math.PI / 2);
-    this.addWall(-5.25, -1.35, 2.25, 0.2);
-    this.addWall(-1.55, -1.35, 2.15, 0.2);
+    this.addWall(-5.45, -1.35, 1.85, 0.2);
+    this.addWall(-1.65, -1.35, 1.25, 0.2);
     this.addDoorFrame(-3.4, -1.35, 0);
 
     this.buildKitchen();
@@ -1035,8 +1073,104 @@ export class World {
     this.items = [];
   }
 
-  private wrapWaypoint(index: number) {
-    return (index + waypoints.length) % waypoints.length;
+  private getOpeningCameraTarget() {
+    return this.player.position
+      .clone()
+      .add(this.fridge.position)
+      .multiplyScalar(0.5)
+      .add(new THREE.Vector3(0, 1.35, 0));
+  }
+
+  private requireNavigationNode(id: string) {
+    const node = navigationNodeMap.get(id);
+    if (!node) throw new Error(`Unknown navigation node: ${id}`);
+    return node;
+  }
+
+  private chooseNextCandyNode() {
+    const current = this.requireNavigationNode(this.candyTargetNodeId);
+    const previousId = this.candyCurrentNodeId;
+    this.candyPreviousNodeId = previousId;
+    this.candyCurrentNodeId = current.id;
+
+    const validLinks = current.links.filter((id) => {
+      const linked = this.requireNavigationNode(id);
+      return this.isPathClear(current.position, linked.position, 0.82);
+    });
+    if (validLinks.length === 0) {
+      throw new Error(`Navigation node has no usable exit: ${current.id}`);
+    }
+
+    const alternatives = validLinks.filter((id) => id !== previousId);
+    const candidates = alternatives.length > 0 ? alternatives : validLinks;
+    const ranked = candidates
+      .map((id) => {
+        const node = this.requireNavigationNode(id);
+        const playerDistance = node.position.distanceTo(this.player.position);
+        const forwardBonus = id === this.candyPreviousNodeId ? -2 : 0;
+        return { id, score: playerDistance + forwardBonus + Math.random() * 3.2 };
+      })
+      .sort((a, b) => b.score - a.score);
+    this.candyTargetNodeId = ranked[0].id;
+  }
+
+  private validateNavigationGraph() {
+    const invalidNodes = navigationNodes.filter(
+      (node) => !this.canOccupy(node.position.x, node.position.z, 0.82),
+    );
+    const invalidEdges: string[] = [];
+    for (const node of navigationNodes) {
+      for (const linkedId of node.links) {
+        const linked = this.requireNavigationNode(linkedId);
+        if (!linked.links.includes(node.id)) {
+          invalidEdges.push(`${node.id}->${linkedId} (one-way)`);
+        } else if (
+          node.id < linkedId &&
+          !this.isPathClear(node.position, linked.position, 0.82)
+        ) {
+          invalidEdges.push(`${node.id}<->${linkedId}`);
+        }
+      }
+    }
+    const visited = new Set<string>();
+    const pending = [navigationNodes[0].id];
+    while (pending.length > 0) {
+      const id = pending.pop();
+      if (!id || visited.has(id)) continue;
+      visited.add(id);
+      pending.push(...this.requireNavigationNode(id).links);
+    }
+    const terminalNodes = navigationNodes.filter((node) => node.links.length < 2);
+    if (
+      invalidNodes.length > 0 ||
+      invalidEdges.length > 0 ||
+      terminalNodes.length > 0 ||
+      visited.size !== navigationNodes.length
+    ) {
+      throw new Error(
+        `Invalid navigation graph: nodes=${invalidNodes.map((node) => node.id).join(',')}; ` +
+          `edges=${invalidEdges.join(',')}; terminals=${terminalNodes.map((node) => node.id).join(',')}; ` +
+          `connected=${visited.size}/${navigationNodes.length}`,
+      );
+    }
+    console.info(`Navigation graph ready: ${navigationNodes.length} nodes, no dead ends`);
+  }
+
+  private isPathClear(from: THREE.Vector3, to: THREE.Vector3, radius: number) {
+    const distance = from.distanceTo(to);
+    const steps = Math.max(1, Math.ceil(distance / 0.16));
+    for (let step = 0; step <= steps; step += 1) {
+      const rate = step / steps;
+      const x = lerp(from.x, to.x, rate);
+      const z = lerp(from.z, to.z, rate);
+      if (!this.canOccupy(x, z, radius)) return false;
+    }
+    return true;
+  }
+
+  private lerpAngle(from: number, to: number, rate: number) {
+    const difference = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+    return from + difference * rate;
   }
 
   private canOccupy(x: number, z: number, radius: number) {

@@ -18,7 +18,7 @@ const openingLines = [
   { speaker: '主人公', text: '今日はよく頑張ったし、少しくらいごほうびがあってもいいはず……。' },
   { speaker: '主人公', text: 'ついでにチョコが無事かどうかも確認しておこう。うん、仕方ない。' },
   { speaker: 'お菓子BOX', text: 'その「仕方ない」、昨日も聞いたけど？' },
-  { speaker: '主人公', text: '出たな！？ お菓子BOX！！' },
+  { speaker: '主人公', text: 'やっぱり来たな！？ お菓子BOX！！' },
   { speaker: 'お菓子BOX', text: '最近、運動って言葉を聞いただけで目をそらしてない？' },
   { speaker: '主人公', text: '確かにそうだけど……。生活習慣を見抜かれてる……。' },
   { speaker: 'お菓子BOX', text: '食べたいなら、まずは少し運動。追いつけたら考えてあげる。' },
@@ -46,7 +46,6 @@ export class Game {
   private itemCount = 0;
   private openingIndex = 0;
   private openingDestination: 'home' | 'difficulty' = 'difficulty';
-  private openingAutoTimer = 0;
   private speechTimer = 0;
   private speechIndex = 0;
   private lastTime = performance.now();
@@ -108,7 +107,7 @@ export class Game {
         <div class="eyebrow">MIDNIGHT HEALTH CHASE</div>
         <h1 class="home-title">逃げる<br><span>お菓子BOX</span></h1>
         <p class="tagline">深夜、透明なお菓子BOXは転がり出した。</p>
-        <div class="system-summary"><b>お菓子欲を、運動のモチベーションに。</b><span>お菓子を取ろうとすると、BOXが勝手に逃げ出す。私たちが何とか捕まえた頃には、自然とカロリーを消費している。画期的な運動促進システム</span></div>
+        <div class="system-summary"><b>お菓子欲を、運動のモチベーションに。</b><span>お菓子を取ろうとすると、BOXが勝手に逃げ出す。<br>私たちが何とか捕まえた頃には、自然とカロリーを消費している。<br>そんな画期的な運動促進システム。</span></div>
         <div class="menu-actions">
           <button class="primary-button" data-action="start"><span>▶</span> はじめから</button>
           <button class="secondary-button" data-action="movie">ムービーを見る</button>
@@ -149,7 +148,6 @@ export class Game {
   private startOpening(destination: 'home' | 'difficulty') {
     this.openingDestination = destination;
     this.openingIndex = 0;
-    this.openingAutoTimer = 0;
     this.setScreen('opening');
     this.audio.startBgm('opening');
     this.world.resetForOpening();
@@ -169,18 +167,15 @@ export class Game {
   }
 
   private updateOpening(dt: number) {
-    this.openingAutoTimer += dt;
     const look = this.input.getLookDelta();
     this.world.animateOpening(this.openingIndex, dt);
     this.world.updateOpeningLook(look.x, look.y);
-    if (this.openingAutoTimer > 4.8) this.nextOpeningLine();
   }
 
   private nextOpeningLine = () => {
     if (this.screen !== 'opening') return;
     this.audio.playEffect('dialogue');
     this.openingIndex += 1;
-    this.openingAutoTimer = 0;
     if (this.openingIndex >= openingLines.length) {
       this.finishOpening();
       return;

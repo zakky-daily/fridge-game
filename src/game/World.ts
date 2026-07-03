@@ -94,6 +94,7 @@ export class World {
   private cameraYaw = -Math.PI / 2;
   private cameraYawOffset = 0;
   private cameraPitch = 0.34;
+  private cameraCollisionRate = 1;
   private playerFacingYaw = Math.PI / 2;
   private clockTime = 0;
   private playerBodyMesh!: THREE.Mesh;
@@ -130,18 +131,22 @@ export class World {
     this.openingEscapeIndex = 0;
     const narrow = this.camera.aspect < 0.75;
     this.openingPlayerStopX = narrow ? -0.65 : -0.55;
-    this.player.position.set(narrow ? -1 : -1.65, 0, 6.85);
+    this.player.position.set(narrow ? -0.85 : -1.65, 0, 6.85);
     this.player.rotation.y = -Math.PI / 2;
-    this.player.scale.setScalar(narrow ? 0.76 : 0.9);
-    this.fridge.position.set(narrow ? 1 : 1.15, 0, 6.85);
+    this.player.scale.setScalar(narrow ? 0.68 : 0.9);
+    this.fridge.position.set(narrow ? 0.75 : 1.15, 0, 6.85);
     this.fridge.rotation.set(0, 0, 0);
-    this.fridge.scale.setScalar(narrow ? 0.8 : 0.9);
+    this.fridge.scale.setScalar(narrow ? 0.66 : 0.9);
     this.candyShell.rotation.set(0, 0, 0);
     this.player.visible = true;
     this.fridge.visible = true;
     this.setCandyBoxMood('smug');
     // Shoot across the open south corridor, away from the kitchen partition.
-    this.camera.position.set(narrow ? 0 : 3.6, narrow ? 5.4 : 3.9, narrow ? 9.2 : 9.2);
+    this.camera.position.set(
+      narrow ? this.player.position.x : 3.6,
+      narrow ? 4.6 : 3.9,
+      narrow ? 9.45 : 9.2,
+    );
     const target = this.getOpeningCameraTarget();
     const offset = this.camera.position.clone().sub(target);
     this.openingOrbitDistance = offset.length();
@@ -217,21 +222,22 @@ export class World {
     this.cameraYaw = -Math.PI / 2;
     this.cameraYawOffset = 0;
     this.cameraPitch = 0.34;
+    this.cameraCollisionRate = 1;
     this.setCandyBoxMood('smug');
     this.spawnItems(DIFFICULTY_SETTINGS[difficulty].itemCount);
     this.updateCamera(0, 0, 0, true);
   }
 
   updateCamera(deltaX: number, deltaY: number, dt: number, immediate = false) {
-    this.cameraYawOffset = clamp(this.cameraYawOffset - deltaX * 0.004, -0.72, 0.72);
+    this.cameraYawOffset = clamp(this.cameraYawOffset - deltaX * 0.0018, -0.48, 0.48);
     if (Math.abs(deltaX) < 0.01) {
-      this.cameraYawOffset *= Math.exp(-dt * 1.9);
+      this.cameraYawOffset *= Math.exp(-dt * 0.9);
     }
-    this.cameraPitch = clamp(this.cameraPitch + deltaY * 0.003, 0.12, 0.72);
+    this.cameraPitch = clamp(this.cameraPitch + deltaY * 0.0016, 0.18, 0.62);
     const targetYaw = this.playerFacingYaw + Math.PI + this.cameraYawOffset;
     this.cameraYaw = immediate
       ? targetYaw
-      : this.lerpAngle(this.cameraYaw, targetYaw, 1 - Math.exp(-dt * 8));
+      : this.lerpAngle(this.cameraYaw, targetYaw, 1 - Math.exp(-dt * 2.55));
     const distance = 6.2;
     const target = this.player.position.clone().add(new THREE.Vector3(0, 1.35, 0));
     const offset = new THREE.Vector3(
@@ -240,12 +246,21 @@ export class World {
       Math.cos(this.cameraYaw) * Math.cos(this.cameraPitch) * distance,
     );
     const desired = target.clone().add(offset);
-    // Keep the third-person camera inside the outer walls. This is a lightweight
-    // wall-clipping guard suitable for the rectangular prototype house.
-    desired.x = clamp(desired.x, -9.35, 9.35);
-    desired.z = clamp(desired.z, -9.35, 9.35);
+    const safeRate = this.getSafeCameraRate(target, desired);
+    const collisionSpeed = safeRate < this.cameraCollisionRate ? 5.2 : 1.15;
+    this.cameraCollisionRate = immediate
+      ? safeRate
+      : lerp(
+          this.cameraCollisionRate,
+          safeRate,
+          1 - Math.exp(-dt * collisionSpeed),
+        );
+    this.cameraCollisionRate = Math.min(this.cameraCollisionRate, safeRate + 0.035);
+
+    desired.copy(target).addScaledVector(offset, this.cameraCollisionRate);
+    desired.y += (1 - this.cameraCollisionRate) * 1.25;
     if (immediate) this.camera.position.copy(desired);
-    else this.camera.position.lerp(desired, 0.16);
+    else this.camera.position.lerp(desired, 1 - Math.exp(-dt * 3.4));
     this.camera.lookAt(target);
   }
 
@@ -602,10 +617,10 @@ export class World {
     this.addFurniture(-4.65, 0.84, -8.85, 2.7, 0.16, 0.68, '#e8e2d8', false);
     this.addFurniture(-4.65, 0.82, -7.78, 2.68, 0.08, 1.18, '#7085a5', false);
 
-    this.addFurniture(-9.05, 0, -4.45, 1.05, 2.45, 2.65, '#58463c');
-    for (const z of [-5.1, -3.8]) {
-      this.addBox(-8.49, 1.28, z, 0.035, 2.05, 1.08, '#6b574a');
-      this.addBox(-8.45, 1.28, z, 0.035, 0.08, 0.25, '#c2a471');
+    this.addFurniture(-9.2, 0, -5.2, 0.95, 2.45, 2.0, '#58463c');
+    for (const z of [-5.68, -4.72]) {
+      this.addBox(-8.7, 1.28, z, 0.035, 2.05, 0.82, '#6b574a');
+      this.addBox(-8.66, 1.28, z, 0.035, 0.08, 0.22, '#c2a471');
     }
 
     this.addFurniture(-0.6, 0, -9.0, 2.8, 0.75, 0.72, '#5f4432');
@@ -653,10 +668,11 @@ export class World {
     this.addBox(-9.72, 2.05, 0.1, 0.08, 0.08, 2.72, '#d8d2c5');
     this.addBox(-9.72, 2.05, 0.1, 0.08, 1.52, 0.08, '#d8d2c5');
 
-    this.addBox(-2.15, 1.95, -1.23, 1.35, 0.92, 0.06, '#c79a53');
-    this.addBox(-2.15, 1.95, -1.18, 1.08, 0.66, 0.04, '#496c78');
-    this.addBox(1.66, 2.02, 4.75, 0.06, 1.0, 1.35, '#d9ae68');
-    this.addBox(1.61, 2.02, 4.75, 0.04, 0.76, 1.05, '#765d80');
+    // Paintings sit flush on the wall surfaces and remain fully inside each wall span.
+    this.addBox(-1.65, 2.02, -1.225, 0.9, 0.82, 0.04, '#c79a53');
+    this.addBox(-1.65, 2.02, -1.198, 0.7, 0.61, 0.025, '#496c78');
+    this.addBox(1.69, 2.02, 4.95, 0.045, 0.9, 1.05, '#d9ae68');
+    this.addBox(1.718, 2.02, 4.95, 0.025, 0.68, 0.82, '#765d80');
 
     const pot = new THREE.Mesh(
       new THREE.CylinderGeometry(0.34, 0.26, 0.52, 12),
@@ -679,14 +695,17 @@ export class World {
   private addDoorFrame(x: number, z: number, rotation: number) {
     const verticalWall = Math.abs(rotation) > 0.1;
     const color = '#c7a979';
+    const columnHeight = 2.92;
+    const columnY = columnHeight / 2;
+    const beamY = 2.99;
     if (verticalWall) {
-      this.addBox(x, 1.18, z - 0.88, 0.28, 2.35, 0.18, color);
-      this.addBox(x, 1.18, z + 0.88, 0.28, 2.35, 0.18, color);
-      this.addBox(x, 2.37, z, 0.28, 0.18, 1.95, color);
+      this.addBox(x, columnY, z - 1.28, 0.26, columnHeight, 0.22, color);
+      this.addBox(x, columnY, z + 1.28, 0.26, columnHeight, 0.22, color);
+      this.addBox(x, beamY, z, 0.26, 0.18, 2.78, color);
     } else {
-      this.addBox(x - 0.88, 1.18, z, 0.18, 2.35, 0.28, color);
-      this.addBox(x + 0.88, 1.18, z, 0.18, 2.35, 0.28, color);
-      this.addBox(x, 2.37, z, 1.95, 0.18, 0.28, color);
+      this.addBox(x - 1.05, columnY, z, 0.2, columnHeight, 0.24, color);
+      this.addBox(x + 1.05, columnY, z, 0.2, columnHeight, 0.24, color);
+      this.addBox(x, beamY, z, 2.3, 0.18, 0.24, color);
     }
   }
 
@@ -855,6 +874,12 @@ export class World {
       { color: '#d89a4a', accent: '#5b3827', position: [-0.2, 0.08, -0.3], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
       { color: '#9b7de3', accent: '#f0e9ff', position: [0.28, 0.08, -0.25], rotation: [0.3, 0.1, 0.9], shape: 'wafer' },
       { color: '#f58d4c', accent: '#fff0bc', position: [0.02, 0.16, 0.18], rotation: [0.2, 0.5, -0.2], shape: 'lollipop' },
+      { color: '#ff8ab3', accent: '#fff0f6', position: [0.43, 0.04, 0.0], rotation: [0.2, -0.4, 0.35], shape: 'gumdrop' },
+      { color: '#82d5ef', accent: '#e9faff', position: [-0.44, 0.04, -0.1], rotation: [0.35, 0.5, -0.4], shape: 'gumdrop' },
+      { color: '#f1c75b', accent: '#fff4c7', position: [-0.08, 0.25, -0.05], rotation: [0.1, 0.3, 0.5], shape: 'donut' },
+      { color: '#54b9a4', accent: '#d9fff5', position: [0.2, 0.26, 0.02], rotation: [0.4, 0.2, -0.25], shape: 'wrap' },
+      { color: '#7a4d38', accent: '#ce8b62', position: [-0.3, 0.25, 0.12], rotation: [0.15, 0.7, 0.18], shape: 'chocolate' },
+      { color: '#f08ca2', accent: '#fff2f5', position: [0.08, 0.32, -0.27], rotation: [0.25, -0.3, 0.28], shape: 'wafer' },
     ] as const;
     this.candyPieces = candySpecs.map((spec) => {
       const candy = new THREE.Group();
@@ -914,6 +939,24 @@ export class World {
         );
         spiral.position.set(0, 0.12, 0.13);
         candy.add(stick, sweet, spiral);
+      } else if (spec.shape === 'gumdrop') {
+        const gumdrop = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), material);
+        gumdrop.scale.set(1, 0.78, 1);
+        const sugar = new THREE.Mesh(
+          new THREE.TorusGeometry(0.12, 0.018, 6, 18),
+          new THREE.MeshStandardMaterial({ color: spec.accent, roughness: 0.85 }),
+        );
+        sugar.rotation.x = Math.PI / 2;
+        sugar.position.y = -0.04;
+        candy.add(gumdrop, sugar);
+      } else if (spec.shape === 'donut') {
+        const donut = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.065, 10, 22), material);
+        const icing = new THREE.Mesh(
+          new THREE.TorusGeometry(0.16, 0.025, 8, 22),
+          new THREE.MeshStandardMaterial({ color: spec.accent, roughness: 0.55 }),
+        );
+        icing.position.z = 0.055;
+        candy.add(donut, icing);
       } else {
         const wafer = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.24), material);
         candy.add(wafer);
@@ -936,15 +979,55 @@ export class World {
       return candy;
     });
 
+    const earMaterial = new THREE.MeshStandardMaterial({
+      color: '#7ccbdc',
+      roughness: 0.38,
+      metalness: 0.04,
+    });
+    const innerEarMaterial = new THREE.MeshStandardMaterial({
+      color: '#f3a7b7',
+      roughness: 0.58,
+    });
     for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 8), dark);
-      eye.position.set(side * 0.22, -0.18, 0.7);
-      eye.scale.y = 1.15;
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.29, 0.48, 3), earMaterial);
+      ear.position.set(side * 0.56, 0.96, 0.03);
+      ear.rotation.set(0, side * 0.08, side * -0.08);
+      ear.castShadow = true;
+      const innerEar = new THREE.Mesh(
+        new THREE.ConeGeometry(0.16, 0.31, 3),
+        innerEarMaterial,
+      );
+      innerEar.position.set(side * 0.56, 0.95, 0.2);
+      innerEar.rotation.copy(ear.rotation);
+      this.candyPayload.add(ear, innerEar);
+
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.105, 16, 10), dark);
+      eye.position.set(side * 0.22, -0.17, 0.7);
+      eye.scale.set(0.9, 1.2, 0.65);
       eye.name = `eye-${side}`;
       this.candyBoxFace.add(eye);
+      const highlight = new THREE.Mesh(
+        new THREE.SphereGeometry(0.025, 8, 6),
+        new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.25 }),
+      );
+      highlight.position.set(side * 0.195, -0.135, 0.77);
+      this.candyBoxFace.add(highlight);
+      const cheek = new THREE.Mesh(
+        new THREE.SphereGeometry(0.085, 12, 8),
+        new THREE.MeshStandardMaterial({
+          color: '#f28ca4',
+          emissive: '#8e3247',
+          emissiveIntensity: 0.12,
+          roughness: 0.65,
+        }),
+      );
+      cheek.position.set(side * 0.4, -0.35, 0.67);
+      cheek.scale.set(1, 0.52, 0.45);
+      this.candyBoxFace.add(cheek);
     }
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.065, 0.04), dark);
-    mouth.position.set(0, -0.38, 0.68);
+    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 7, 20, Math.PI), dark);
+    mouth.position.set(0, -0.35, 0.71);
+    mouth.rotation.z = Math.PI;
     mouth.name = 'mouth';
     this.candyBoxFace.add(mouth);
 
@@ -993,18 +1076,18 @@ export class World {
     const right = this.candyBoxFace.getObjectByName('eye-1');
     if (!mouth || !left || !right) return;
     if (mood === 'smug') {
-      mouth.rotation.z = -0.12;
-      mouth.scale.set(1, 1, 1);
-      left.scale.y = 0.55;
-      right.scale.y = 1.1;
+      mouth.rotation.z = Math.PI - 0.08;
+      mouth.scale.set(1, 0.9, 1);
+      left.scale.y = 0.72;
+      right.scale.y = 1.18;
     } else if (mood === 'alert') {
-      mouth.rotation.z = 0;
-      mouth.scale.set(0.7, 1.4, 1);
+      mouth.rotation.z = Math.PI;
+      mouth.scale.set(0.72, 1.25, 1);
       left.scale.y = 1.25;
       right.scale.y = 1.25;
     } else {
       mouth.rotation.z = 0;
-      mouth.scale.set(0.55, 2.5, 1);
+      mouth.scale.set(0.62, 1.4, 1);
       left.scale.y = 1.6;
       right.scale.y = 1.6;
     }
@@ -1074,11 +1157,7 @@ export class World {
   }
 
   private getOpeningCameraTarget() {
-    return this.player.position
-      .clone()
-      .add(this.fridge.position)
-      .multiplyScalar(0.5)
-      .add(new THREE.Vector3(0, 1.35, 0));
+    return this.player.position.clone().add(new THREE.Vector3(0, 0.35, 0));
   }
 
   private requireNavigationNode(id: string) {
@@ -1171,6 +1250,28 @@ export class World {
   private lerpAngle(from: number, to: number, rate: number) {
     const difference = Math.atan2(Math.sin(to - from), Math.cos(to - from));
     return from + difference * rate;
+  }
+
+  private getSafeCameraRate(target: THREE.Vector3, desired: THREE.Vector3) {
+    const offset = desired.clone().sub(target);
+    let safeRate = 0.28;
+    for (let rate = 0.28; rate <= 1.001; rate += 0.025) {
+      const point = target.clone().addScaledVector(offset, rate);
+      if (!this.isCameraPointClear(point.x, point.z, 0.62)) break;
+      safeRate = Math.min(rate, 1);
+    }
+    return safeRate;
+  }
+
+  private isCameraPointClear(x: number, z: number, radius: number) {
+    if (x < -9.35 || x > 9.35 || z < -9.35 || z > 9.35) return false;
+    return !this.colliders.some(
+      (box) =>
+        x + radius > box.minX &&
+        x - radius < box.maxX &&
+        z + radius > box.minZ &&
+        z - radius < box.maxZ,
+    );
   }
 
   private canOccupy(x: number, z: number, radius: number) {

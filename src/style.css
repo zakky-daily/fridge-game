@@ -150,7 +150,7 @@ h2 {
   width: min(100%, 360px);
   margin-bottom: 18px;
   padding: 11px 14px;
-  border: 1px solid rgba(101, 230, 180, 0.2);
+  border: 1px solid var(--mint);
   border-radius: 13px;
   background: rgba(34, 100, 80, 0.12);
 }
@@ -161,9 +161,16 @@ h2 {
 }
 
 .system-summary span {
-  color: #a8bbc4;
+  display: block;
+  color: #c1cedd;
   font-size: 0.67rem;
   line-height: 1.55;
+  white-space: normal;
+}
+
+.system-summary span br {
+  display: block;
+  content: "";
 }
 
 .menu-actions {

@@ -1,14 +1,11 @@
-# Third-party audio
+# Audio assets
 
-This game uses the following background music from
-[DOVA-SYNDROME](https://dova-s.jp/) under its audio license.
+The current game build uses the project-provided files in `audio/`.
 
-- **追いかけっこキャッハー** — 今川彰人オーケストラ
-  https://dova-s.jp/bgm/detail/6371
-- **かわいいもふもふ** — のる
-  https://dova-s.jp/bgm/detail/14716
+- `title.mp3` — home, opening movie, difficulty selection
+- `game.mp3` — gameplay
+- `sleep.mp3` — rest ending
+- `success.mp3` — one-shot clear sound effect
 
-The audio is used as background music in the game. Copyright remains with
-the respective composers. See the DOVA-SYNDROME
-[audio license](https://dova-s.jp/contents/license) and
-[site terms](https://dova-s.jp/contents/terms).
+The previous DOVA-SYNDROME audio files are no longer imported or kept in the
+current source tree.

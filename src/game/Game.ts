@@ -162,7 +162,10 @@ export class Game {
       </button>
     `;
     this.updateOpeningText();
-    this.required<HTMLElement>('[data-action="next"]').addEventListener('click', this.nextOpeningLine);
+    this.required<HTMLElement>('[data-action="next"]').addEventListener('click', () => {
+      this.audio.playEffect('select');
+      this.nextOpeningLine();
+    });
     this.bind('[data-action="skip"]', this.finishOpening);
   }
 
@@ -174,7 +177,6 @@ export class Game {
 
   private nextOpeningLine = () => {
     if (this.screen !== 'opening') return;
-    this.audio.playEffect('dialogue');
     this.openingIndex += 1;
     if (this.openingIndex >= openingLines.length) {
       this.finishOpening();
@@ -196,9 +198,9 @@ export class Game {
     else this.showDifficulty();
   };
 
-  private showDifficulty = () => {
+  private showDifficulty = (keepCurrentBgm = false) => {
     this.setScreen('difficulty');
-    this.audio.startBgm('menu');
+    if (!keepCurrentBgm) this.audio.startBgm('menu');
     this.overlay.innerHTML = `
       <main class="menu-panel mood-panel">
         <div class="eyebrow">CHECK IN WITH YOURSELF</div>
@@ -241,7 +243,7 @@ export class Game {
       </main>
     `;
     this.bind('[data-action="home"]', this.showHome);
-    this.bind('[data-action="choose"]', this.showDifficulty);
+    this.bind('[data-action="choose"]', () => this.showDifficulty(true));
   }
 
   private startGame(difficulty: Difficulty) {
@@ -265,6 +267,7 @@ export class Game {
     this.boostRemaining = Math.max(0, this.boostRemaining - dt);
     const movement = this.input.getMovement();
     const look = this.input.getLookDelta();
+    const moveInputActive = movement.lengthSq() > 0.0001;
     const hasBoost = this.boostRemaining > 0;
     const speed = hasBoost ? GAME_CONFIG.player.boostSpeed : GAME_CONFIG.player.walkSpeed;
     const moved = this.world.movePlayer(movement.x, movement.y, speed * dt);
@@ -283,7 +286,7 @@ export class Game {
     );
     const fridgeSpeed = DIFFICULTY_SETTINGS[this.difficulty].fridgeSpeed * fridgeRate;
     this.world.updateFridge(dt, fridgeSpeed, this.calories);
-    this.world.updateCamera(look.x, look.y, dt);
+    this.world.updateCamera(look.x, look.y, moveInputActive);
     this.world.setPlayerShape(this.calories);
     this.world.updateItems(dt);
 
@@ -332,8 +335,8 @@ export class Game {
 
   private showResult(result: Result) {
     this.setScreen('result');
-    this.audio.playEffect('catch');
-    this.audio.startBgm('result');
+    this.audio.stopBgm(180);
+    this.audio.playEffect('success');
     const type = this.getHealthType(result);
     this.overlay.innerHTML = `
       <main class="menu-panel result-panel">
@@ -377,11 +380,14 @@ export class Game {
   }
 
   private getHealthType(result: Result) {
-    if (result.seconds <= 35 && result.items >= 2) return 'ウォーター・スプリンター';
-    if (result.items >= 4) return '水分補給マスター';
-    if (result.calories >= 65 || result.seconds >= 85) return 'じっくり継続タイプ';
-    if (result.calories >= 35 && result.items >= 2) return 'バランス運動タイプ';
-    return '小さな一歩タイプ';
+    const calorieStage = result.calories < 35 ? 0 : result.calories < 65 ? 1 : 2;
+    const waterStage = result.items >= 3 ? 1 : 0;
+    const types = [
+      ['はじめの一歩タイプ', '水分補給スタートタイプ'],
+      ['マイペース燃焼タイプ', 'うるおい燃焼タイプ'],
+      ['粘り強い運動タイプ', 'ウォーター・ランナータイプ'],
+    ] as const;
+    return types[calorieStage][waterStage];
   }
 
   private formatTime(seconds: number) {

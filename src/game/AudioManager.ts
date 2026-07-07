@@ -1,15 +1,16 @@
-import chaseBgmUrl from '../assets/audio/chase.mp3';
-import menuBgmUrl from '../assets/audio/menu.mp3';
+import gameBgmUrl from '../../audio/game.mp3';
+import sleepBgmUrl from '../../audio/sleep.mp3';
+import successSeUrl from '../../audio/success.mp3';
+import titleBgmUrl from '../../audio/title.mp3';
 
-export type SoundEffect = 'select' | 'dialogue' | 'water' | 'catch';
-export type BgmMode = 'menu' | 'opening' | 'game' | 'rest' | 'result';
+export type SoundEffect = 'select' | 'dialogue' | 'water' | 'catch' | 'success';
+export type BgmMode = 'menu' | 'opening' | 'game' | 'rest';
 
 const BGM_TRACKS: Record<BgmMode, { url: string; volume: number }> = {
-  menu: { url: menuBgmUrl, volume: 0.24 },
-  opening: { url: menuBgmUrl, volume: 0.19 },
-  game: { url: chaseBgmUrl, volume: 0.28 },
-  rest: { url: menuBgmUrl, volume: 0.15 },
-  result: { url: menuBgmUrl, volume: 0.23 },
+  menu: { url: titleBgmUrl, volume: 0.26 },
+  opening: { url: titleBgmUrl, volume: 0.22 },
+  game: { url: gameBgmUrl, volume: 0.3 },
+  rest: { url: sleepBgmUrl, volume: 0.24 },
 };
 
 export class AudioManager {
@@ -32,6 +33,10 @@ export class AudioManager {
     if (this.mode && !this.bgm) this.playBgm(this.mode);
     const start = context.currentTime + 0.015;
 
+    if (effect === 'success') {
+      this.playSuccessSample();
+      return;
+    }
     if (effect === 'select') {
       this.playPluck(659.25, start, 0.13, 0.075);
       this.playPluck(987.77, start + 0.055, 0.16, 0.055);
@@ -61,6 +66,15 @@ export class AudioManager {
   startBgm(mode: BgmMode) {
     this.mode = mode;
     if (this.unlocked) this.playBgm(mode);
+  }
+
+  stopBgm(fadeMs = 360) {
+    this.mode = null;
+    if (!this.bgm) return;
+    const current = this.bgm;
+    this.bgm = null;
+    this.bgmUrl = '';
+    this.fadeOutAndPause(current, fadeMs);
   }
 
   private playBgm(mode: BgmMode) {
@@ -131,6 +145,34 @@ export class AudioManager {
       this.bgmFadeFrame = rate < 1 ? requestAnimationFrame(tick) : null;
     };
     this.bgmFadeFrame = requestAnimationFrame(tick);
+  }
+
+  private fadeOutAndPause(audio: HTMLAudioElement, duration: number) {
+    this.cancelBgmFade();
+    const initialVolume = audio.volume;
+    const startedAt = performance.now();
+    const tick = (now: number) => {
+      const rate = Math.max(0, Math.min((now - startedAt) / duration, 1));
+      audio.volume = initialVolume * (1 - rate);
+      if (rate < 1) {
+        this.bgmFadeFrame = requestAnimationFrame(tick);
+      } else {
+        audio.pause();
+        audio.currentTime = 0;
+        if (this.fadingOutBgm === audio) this.fadingOutBgm = null;
+        this.bgmFadeFrame = null;
+      }
+    };
+    this.fadingOutBgm = audio;
+    this.bgmFadeFrame = requestAnimationFrame(tick);
+  }
+
+  private playSuccessSample() {
+    const audio = new Audio(successSeUrl);
+    audio.preload = 'auto';
+    audio.loop = false;
+    audio.volume = 0.72;
+    void audio.play().catch(() => undefined);
   }
 
   private cancelBgmFade() {

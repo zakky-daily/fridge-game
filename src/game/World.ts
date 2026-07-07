@@ -13,6 +13,19 @@ type BoxCollider = {
   maxZ: number;
 };
 
+type CameraOccluder = {
+  collider: BoxCollider;
+  mesh: THREE.Mesh;
+  material: THREE.Material & {
+    opacity: number;
+    transparent: boolean;
+    depthWrite: boolean;
+  };
+  baseOpacity: number;
+  baseTransparent: boolean;
+  baseDepthWrite: boolean;
+};
+
 type NavigationNode = {
   id: string;
   position: THREE.Vector3;
@@ -29,10 +42,11 @@ const navigationNodes: NavigationNode[] = [
   { id: 'center-north', position: new THREE.Vector3(0, 0, 2.85), links: ['south-mid', 'kitchen-door', 'living-east', 'center'] },
   { id: 'living-east', position: new THREE.Vector3(-2, 0, 5.8), links: ['south-mid', 'center-north', 'living-west'] },
   { id: 'living-west', position: new THREE.Vector3(-6.6, 0, 5.8), links: ['south-west', 'living-east', 'living-south'] },
-  { id: 'living-south', position: new THREE.Vector3(-6.8, 0, 2), links: ['living-west', 'bedroom-entry'] },
+  { id: 'living-south', position: new THREE.Vector3(-6.8, 0, 2), links: ['living-west', 'bedroom-entry', 'left-passage'] },
+  { id: 'left-passage', position: new THREE.Vector3(-7.05, 0, -1.35), links: ['living-south', 'bedroom-west'] },
   { id: 'bedroom-entry', position: new THREE.Vector3(-3.4, 0, 0.2), links: ['living-south', 'bedroom-door', 'center'] },
   { id: 'bedroom-door', position: new THREE.Vector3(-3.4, 0, -2.7), links: ['bedroom-entry', 'bedroom-west', 'bedroom-mid'] },
-  { id: 'bedroom-west', position: new THREE.Vector3(-7, 0, -2.7), links: ['bedroom-door', 'bedroom-south-west'] },
+  { id: 'bedroom-west', position: new THREE.Vector3(-7, 0, -2.7), links: ['bedroom-door', 'bedroom-south-west', 'left-passage'] },
   { id: 'bedroom-south-west', position: new THREE.Vector3(-7, 0, -5.5), links: ['bedroom-west', 'bedroom-mid'] },
   { id: 'bedroom-mid', position: new THREE.Vector3(-3, 0, -5.5), links: ['bedroom-door', 'bedroom-south-west', 'center-south'] },
   { id: 'center-south', position: new THREE.Vector3(0, 0, -5.5), links: ['bedroom-mid', 'dining-south-west', 'center-lower'] },
@@ -82,6 +96,8 @@ export class World {
   private items: Item[] = [];
   private itemSpawnTimer = 4;
   private colliders: BoxCollider[] = [];
+  private cameraOccluders: CameraOccluder[] = [];
+  private candyShellRadius = 1.08;
   private candyCurrentNodeId = 'south-east';
   private candyTargetNodeId = 'kitchen-east';
   private candyPreviousNodeId: string | null = 'south-mid';
@@ -94,7 +110,6 @@ export class World {
   private cameraYaw = -Math.PI / 2;
   private cameraYawOffset = 0;
   private cameraPitch = 0.34;
-  private cameraCollisionRate = 1;
   private playerFacingYaw = Math.PI / 2;
   private clockTime = 0;
   private playerBodyMesh!: THREE.Mesh;
@@ -170,9 +185,8 @@ export class World {
       target.y + Math.sin(this.openingOrbitPitch) * this.openingOrbitDistance,
       target.z + Math.cos(this.openingOrbitYaw) * horizontalDistance,
     );
-    this.camera.position.x = clamp(this.camera.position.x, -9.25, 9.25);
-    this.camera.position.z = clamp(this.camera.position.z, -9.25, 9.25);
     this.camera.lookAt(target);
+    this.updateCameraOccluders(target);
   }
 
   animateOpening(stage: number, dt: number) {
@@ -222,46 +236,31 @@ export class World {
     this.cameraYaw = -Math.PI / 2;
     this.cameraYawOffset = 0;
     this.cameraPitch = 0.34;
-    this.cameraCollisionRate = 1;
     this.setCandyBoxMood('smug');
     this.spawnItems(DIFFICULTY_SETTINGS[difficulty].itemCount);
-    this.updateCamera(0, 0, 0, true);
+    this.updateCamera(0, 0, true, true);
   }
 
-  updateCamera(deltaX: number, deltaY: number, dt: number, immediate = false) {
-    this.cameraYawOffset = clamp(this.cameraYawOffset - deltaX * 0.0018, -0.48, 0.48);
-    if (Math.abs(deltaX) < 0.01) {
-      this.cameraYawOffset *= Math.exp(-dt * 0.9);
+  updateCamera(deltaX: number, deltaY: number, moveInputActive: boolean, immediate = false) {
+    const hasLookInput = Math.abs(deltaX) + Math.abs(deltaY) > 0.001;
+    if (hasLookInput) {
+      this.cameraYawOffset = clamp(this.cameraYawOffset - deltaX * 0.0018, -0.48, 0.48);
+      this.cameraPitch = clamp(this.cameraPitch + deltaY * 0.0016, 0.18, 0.62);
     }
-    this.cameraPitch = clamp(this.cameraPitch + deltaY * 0.0016, 0.18, 0.62);
-    const targetYaw = this.playerFacingYaw + Math.PI + this.cameraYawOffset;
-    this.cameraYaw = immediate
-      ? targetYaw
-      : this.lerpAngle(this.cameraYaw, targetYaw, 1 - Math.exp(-dt * 2.55));
+    if (immediate || moveInputActive || hasLookInput) {
+      this.cameraYaw = this.playerFacingYaw + Math.PI + this.cameraYawOffset;
+    }
     const distance = 6.2;
     const target = this.player.position.clone().add(new THREE.Vector3(0, 1.35, 0));
     const offset = new THREE.Vector3(
       Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch) * distance,
-      Math.sin(this.cameraPitch) * distance + 0.6,
+      Math.sin(this.cameraPitch) * distance,
       Math.cos(this.cameraYaw) * Math.cos(this.cameraPitch) * distance,
     );
     const desired = target.clone().add(offset);
-    const safeRate = this.getSafeCameraRate(target, desired);
-    const collisionSpeed = safeRate < this.cameraCollisionRate ? 5.2 : 1.15;
-    this.cameraCollisionRate = immediate
-      ? safeRate
-      : lerp(
-          this.cameraCollisionRate,
-          safeRate,
-          1 - Math.exp(-dt * collisionSpeed),
-        );
-    this.cameraCollisionRate = Math.min(this.cameraCollisionRate, safeRate + 0.035);
-
-    desired.copy(target).addScaledVector(offset, this.cameraCollisionRate);
-    desired.y += (1 - this.cameraCollisionRate) * 1.25;
-    if (immediate) this.camera.position.copy(desired);
-    else this.camera.position.lerp(desired, 1 - Math.exp(-dt * 3.4));
+    this.camera.position.copy(desired);
     this.camera.lookAt(target);
+    this.updateCameraOccluders(target);
   }
 
   movePlayer(inputX: number, inputY: number, distance: number) {
@@ -464,7 +463,7 @@ export class World {
     this.addWall(1.55, 5.1, 0.22, 1.75);
     this.addWall(1.55, 0.8, 0.22, 1.4);
     this.addDoorFrame(1.55, 2.85, Math.PI / 2);
-    this.addWall(-5.45, -1.35, 1.85, 0.2);
+    this.addWall(-5.1, -1.35, 1.35, 0.2);
     this.addWall(-1.65, -1.35, 1.25, 0.2);
     this.addDoorFrame(-3.4, -1.35, 0);
 
@@ -504,12 +503,14 @@ export class World {
       horizontal ? Math.max(depth, 0.12) + 0.06 : depth + 0.03,
       '#d4c6ad',
     );
-    this.colliders.push({
+    const collider = {
       minX: x - width / 2,
       maxX: x + width / 2,
       minZ: z - depth / 2,
       maxZ: z + depth / 2,
-    });
+    };
+    this.colliders.push(collider);
+    this.addCameraOccluder(wall, collider);
   }
 
   private addFurniture(
@@ -524,12 +525,14 @@ export class World {
   ) {
     const furniture = this.addBox(x, y + height / 2, z, width, height, depth, color);
     if (collidable) {
-      this.colliders.push({
+      const collider = {
         minX: x - width / 2,
         maxX: x + width / 2,
         minZ: z - depth / 2,
         maxZ: z + depth / 2,
-      });
+      };
+      this.colliders.push(collider);
+      this.addCameraOccluder(furniture, collider);
     }
     return furniture;
   }
@@ -595,10 +598,10 @@ export class World {
       this.addBox(x, 0.052, 4.1, 0.045, 0.01, 3.15, '#b78388');
     }
 
-    this.addFurniture(-8.75, 0, 4.25, 1.25, 0.62, 3.45, '#3e6d72');
-    this.addFurniture(-9.18, 0.42, 4.25, 0.45, 1.15, 3.45, '#31575d', false);
+    this.addFurniture(-8.95, 0, 4.25, 1.05, 0.62, 3.45, '#3e6d72');
+    this.addFurniture(-9.32, 0.42, 4.25, 0.38, 1.15, 3.45, '#31575d', false);
     for (const z of [3.35, 5.15]) {
-      const cushion = this.addFurniture(-8.3, 0.56, z, 0.72, 0.5, 1.38, '#5b8c8c', false);
+      const cushion = this.addFurniture(-8.72, 0.56, z, 0.62, 0.5, 1.38, '#5b8c8c', false);
       cushion.rotation.z = -0.08;
     }
     this.addFurniture(-4.25, 0, 4.05, 2.15, 0.42, 1.0, '#6f4931');
@@ -617,10 +620,10 @@ export class World {
     this.addFurniture(-4.65, 0.84, -8.85, 2.7, 0.16, 0.68, '#e8e2d8', false);
     this.addFurniture(-4.65, 0.82, -7.78, 2.68, 0.08, 1.18, '#7085a5', false);
 
-    this.addFurniture(-9.2, 0, -5.2, 0.95, 2.45, 2.0, '#58463c');
-    for (const z of [-5.68, -4.72]) {
-      this.addBox(-8.7, 1.28, z, 0.035, 2.05, 0.82, '#6b574a');
-      this.addBox(-8.66, 1.28, z, 0.035, 0.08, 0.22, '#c2a471');
+    this.addFurniture(-9.32, 0, -5.45, 0.84, 2.45, 1.9, '#58463c');
+    for (const z of [-5.9, -5.0]) {
+      this.addBox(-8.88, 1.28, z, 0.035, 2.05, 0.76, '#6b574a');
+      this.addBox(-8.84, 1.28, z, 0.035, 0.08, 0.2, '#c2a471');
     }
 
     this.addFurniture(-0.6, 0, -9.0, 2.8, 0.75, 0.72, '#5f4432');
@@ -729,6 +732,18 @@ export class World {
     return box;
   }
 
+  private addCameraOccluder(mesh: THREE.Mesh, collider: BoxCollider) {
+    const material = mesh.material as CameraOccluder['material'];
+    this.cameraOccluders.push({
+      collider,
+      mesh,
+      material,
+      baseOpacity: material.opacity,
+      baseTransparent: material.transparent,
+      baseDepthWrite: material.depthWrite,
+    });
+  }
+
   private buildPlayer() {
     const skin = new THREE.MeshStandardMaterial({ color: '#f2b58f', roughness: 0.7 });
     const shirt = new THREE.MeshStandardMaterial({ color: '#f0a65b', roughness: 0.75 });
@@ -816,7 +831,7 @@ export class World {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(1.02, 36, 26), shellMaterial);
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(this.candyShellRadius, 40, 28), shellMaterial);
     shell.castShadow = true;
     shell.renderOrder = 3;
     this.candyShell.add(shell);
@@ -827,28 +842,28 @@ export class World {
       opacity: 0.72,
       roughness: 0.3,
     });
-    const equator = new THREE.Mesh(new THREE.TorusGeometry(1.025, 0.025, 8, 48), hoopMaterial);
+    const equator = new THREE.Mesh(new THREE.TorusGeometry(this.candyShellRadius + 0.005, 0.024, 8, 52), hoopMaterial);
     equator.rotation.x = Math.PI / 2;
-    const meridian = new THREE.Mesh(new THREE.TorusGeometry(1.025, 0.025, 8, 48), hoopMaterial);
+    const meridian = new THREE.Mesh(new THREE.TorusGeometry(this.candyShellRadius + 0.005, 0.024, 8, 52), hoopMaterial);
     meridian.rotation.y = Math.PI / 2;
     this.candyShell.add(equator, meridian);
 
     const handle = new THREE.Mesh(
-      new THREE.TorusGeometry(0.36, 0.065, 10, 28, Math.PI),
+      new THREE.TorusGeometry(0.3, 0.052, 10, 26, Math.PI),
       new THREE.MeshStandardMaterial({ color: '#f0b65f', roughness: 0.45 }),
     );
-    handle.position.y = 1.03;
+    handle.position.y = 1.08;
     handle.castShadow = true;
     this.candyShell.add(handle);
     for (const side of [-1, 1]) {
       const connector = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.065, 0.065, 0.22, 10),
+        new THREE.CylinderGeometry(0.052, 0.052, 0.18, 10),
         new THREE.MeshStandardMaterial({ color: '#f0b65f', roughness: 0.45 }),
       );
-      connector.position.set(side * 0.36, 0.98, 0);
+      connector.position.set(side * 0.3, 1.02, 0);
       this.candyShell.add(connector);
     }
-    this.candyShell.position.y = 1.04;
+    this.candyShell.position.y = this.candyShellRadius;
 
     const bowlMaterial = new THREE.MeshStandardMaterial({
       color: '#f7f5ee',
@@ -856,30 +871,33 @@ export class World {
       side: THREE.DoubleSide,
     });
     const bowl = new THREE.Mesh(
-      new THREE.SphereGeometry(0.76, 32, 18, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
+      new THREE.SphereGeometry(0.82, 34, 18, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
       bowlMaterial,
     );
     bowl.castShadow = true;
     const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(0.76, 0.045, 8, 36),
+      new THREE.TorusGeometry(0.82, 0.045, 8, 38),
       new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.45 }),
     );
     rim.rotation.x = Math.PI / 2;
     this.candyPayload.add(bowl, rim);
 
     const candySpecs = [
-      { color: '#ef6b78', accent: '#ffe0e4', position: [-0.34, -0.12, 0.05], rotation: [0.2, 0.4, 0.7], shape: 'wrap' },
-      { color: '#64c8a2', accent: '#e2fff4', position: [0.3, -0.08, 0.12], rotation: [0.5, 0.2, -0.5], shape: 'wrap' },
-      { color: '#6d402d', accent: '#b77b55', position: [0.02, -0.03, -0.22], rotation: [0.1, 0.6, 0.15], shape: 'chocolate' },
-      { color: '#d89a4a', accent: '#5b3827', position: [-0.2, 0.08, -0.3], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
-      { color: '#9b7de3', accent: '#f0e9ff', position: [0.28, 0.08, -0.25], rotation: [0.3, 0.1, 0.9], shape: 'wafer' },
-      { color: '#f58d4c', accent: '#fff0bc', position: [0.02, 0.16, 0.18], rotation: [0.2, 0.5, -0.2], shape: 'lollipop' },
-      { color: '#ff8ab3', accent: '#fff0f6', position: [0.43, 0.04, 0.0], rotation: [0.2, -0.4, 0.35], shape: 'gumdrop' },
-      { color: '#82d5ef', accent: '#e9faff', position: [-0.44, 0.04, -0.1], rotation: [0.35, 0.5, -0.4], shape: 'gumdrop' },
-      { color: '#f1c75b', accent: '#fff4c7', position: [-0.08, 0.25, -0.05], rotation: [0.1, 0.3, 0.5], shape: 'donut' },
-      { color: '#54b9a4', accent: '#d9fff5', position: [0.2, 0.26, 0.02], rotation: [0.4, 0.2, -0.25], shape: 'wrap' },
-      { color: '#7a4d38', accent: '#ce8b62', position: [-0.3, 0.25, 0.12], rotation: [0.15, 0.7, 0.18], shape: 'chocolate' },
-      { color: '#f08ca2', accent: '#fff2f5', position: [0.08, 0.32, -0.27], rotation: [0.25, -0.3, 0.28], shape: 'wafer' },
+      { color: '#ef6b78', accent: '#ffe0e4', position: [-0.38, -0.28, 0.08], rotation: [0.2, 0.4, 0.7], shape: 'wrap' },
+      { color: '#64c8a2', accent: '#e2fff4', position: [0.34, -0.27, 0.12], rotation: [0.5, 0.2, -0.5], shape: 'wrap' },
+      { color: '#6d402d', accent: '#b77b55', position: [0.02, -0.24, -0.22], rotation: [0.1, 0.6, 0.15], shape: 'chocolate' },
+      { color: '#d89a4a', accent: '#5b3827', position: [-0.22, -0.19, -0.32], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
+      { color: '#9b7de3', accent: '#f0e9ff', position: [0.31, -0.18, -0.24], rotation: [0.3, 0.1, 0.9], shape: 'wafer' },
+      { color: '#f58d4c', accent: '#fff0bc', position: [0.02, -0.13, 0.23], rotation: [0.2, 0.5, -0.2], shape: 'lollipop' },
+      { color: '#ff8ab3', accent: '#fff0f6', position: [0.48, -0.2, -0.02], rotation: [0.2, -0.4, 0.35], shape: 'gumdrop' },
+      { color: '#82d5ef', accent: '#e9faff', position: [-0.49, -0.2, -0.1], rotation: [0.35, 0.5, -0.4], shape: 'gumdrop' },
+      { color: '#f1c75b', accent: '#fff4c7', position: [-0.09, -0.08, -0.06], rotation: [0.1, 0.3, 0.5], shape: 'donut' },
+      { color: '#54b9a4', accent: '#d9fff5', position: [0.24, -0.07, 0.04], rotation: [0.4, 0.2, -0.25], shape: 'wrap' },
+      { color: '#7a4d38', accent: '#ce8b62', position: [-0.32, -0.08, 0.16], rotation: [0.15, 0.7, 0.18], shape: 'chocolate' },
+      { color: '#f08ca2', accent: '#fff2f5', position: [0.09, -0.03, -0.28], rotation: [0.25, -0.3, 0.28], shape: 'wafer' },
+      { color: '#b7df51', accent: '#f4ffd4', position: [-0.5, -0.06, 0.18], rotation: [0.1, 0.2, -0.55], shape: 'wrap' },
+      { color: '#f7a7d6', accent: '#ffffff', position: [0.43, -0.05, 0.22], rotation: [0.25, -0.1, 0.1], shape: 'donut' },
+      { color: '#c69052', accent: '#6b3e28', position: [0.0, 0.0, 0.06], rotation: [Math.PI / 2, 0.2, -0.15], shape: 'cookie' },
     ] as const;
     this.candyPieces = candySpecs.map((spec) => {
       const candy = new THREE.Group();
@@ -979,41 +997,20 @@ export class World {
       return candy;
     });
 
-    const earMaterial = new THREE.MeshStandardMaterial({
-      color: '#7ccbdc',
-      roughness: 0.38,
-      metalness: 0.04,
-    });
-    const innerEarMaterial = new THREE.MeshStandardMaterial({
-      color: '#f3a7b7',
-      roughness: 0.58,
-    });
     for (const side of [-1, 1]) {
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.29, 0.48, 3), earMaterial);
-      ear.position.set(side * 0.56, 0.96, 0.03);
-      ear.rotation.set(0, side * 0.08, side * -0.08);
-      ear.castShadow = true;
-      const innerEar = new THREE.Mesh(
-        new THREE.ConeGeometry(0.16, 0.31, 3),
-        innerEarMaterial,
-      );
-      innerEar.position.set(side * 0.56, 0.95, 0.2);
-      innerEar.rotation.copy(ear.rotation);
-      this.candyPayload.add(ear, innerEar);
-
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.105, 16, 10), dark);
-      eye.position.set(side * 0.22, -0.17, 0.7);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.092, 16, 10), dark);
+      eye.position.set(side * 0.2, -0.18, 0.72);
       eye.scale.set(0.9, 1.2, 0.65);
       eye.name = `eye-${side}`;
       this.candyBoxFace.add(eye);
       const highlight = new THREE.Mesh(
-        new THREE.SphereGeometry(0.025, 8, 6),
+        new THREE.SphereGeometry(0.022, 8, 6),
         new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.25 }),
       );
-      highlight.position.set(side * 0.195, -0.135, 0.77);
+      highlight.position.set(side * 0.178, -0.148, 0.79);
       this.candyBoxFace.add(highlight);
       const cheek = new THREE.Mesh(
-        new THREE.SphereGeometry(0.085, 12, 8),
+        new THREE.SphereGeometry(0.074, 12, 8),
         new THREE.MeshStandardMaterial({
           color: '#f28ca4',
           emissive: '#8e3247',
@@ -1021,18 +1018,18 @@ export class World {
           roughness: 0.65,
         }),
       );
-      cheek.position.set(side * 0.4, -0.35, 0.67);
+      cheek.position.set(side * 0.36, -0.34, 0.7);
       cheek.scale.set(1, 0.52, 0.45);
       this.candyBoxFace.add(cheek);
     }
-    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 7, 20, Math.PI), dark);
-    mouth.position.set(0, -0.35, 0.71);
+    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.022, 7, 20, Math.PI), dark);
+    mouth.position.set(0, -0.35, 0.73);
     mouth.rotation.z = Math.PI;
     mouth.name = 'mouth';
     this.candyBoxFace.add(mouth);
 
     this.candyPayload.add(this.candyBoxFace);
-    this.candyPayload.position.y = 1.04;
+    this.candyPayload.position.y = this.candyShellRadius;
     this.fridge.add(this.candyPayload, this.candyShell);
 
     const glow = new THREE.PointLight('#8adcf2', 4, 4);
@@ -1105,7 +1102,7 @@ export class World {
   private rollCandyBox(direction: THREE.Vector3, distance: number) {
     if (distance <= 0 || direction.lengthSq() === 0) return;
     const axis = new THREE.Vector3(direction.z, 0, -direction.x).normalize();
-    this.candyShell.rotateOnWorldAxis(axis, distance / 1.02);
+    this.candyShell.rotateOnWorldAxis(axis, distance / this.candyShellRadius);
   }
 
   private spawnItems(count: number) {
@@ -1247,31 +1244,63 @@ export class World {
     return true;
   }
 
-  private lerpAngle(from: number, to: number, rate: number) {
-    const difference = Math.atan2(Math.sin(to - from), Math.cos(to - from));
-    return from + difference * rate;
-  }
-
-  private getSafeCameraRate(target: THREE.Vector3, desired: THREE.Vector3) {
-    const offset = desired.clone().sub(target);
-    let safeRate = 0.28;
-    for (let rate = 0.28; rate <= 1.001; rate += 0.025) {
-      const point = target.clone().addScaledVector(offset, rate);
-      if (!this.isCameraPointClear(point.x, point.z, 0.62)) break;
-      safeRate = Math.min(rate, 1);
+  private updateCameraOccluders(target: THREE.Vector3) {
+    for (const occluder of this.cameraOccluders) {
+      const blocked =
+        this.pointInsideCollider(this.camera.position.x, this.camera.position.z, occluder.collider, 0.04) ||
+        this.segmentIntersectsCollider(
+          target.x,
+          target.z,
+          this.camera.position.x,
+          this.camera.position.z,
+          occluder.collider,
+          0.06,
+        );
+      occluder.material.opacity = blocked ? Math.min(occluder.baseOpacity, 0.23) : occluder.baseOpacity;
+      occluder.material.transparent = blocked || occluder.baseTransparent;
+      occluder.material.depthWrite = blocked ? false : occluder.baseDepthWrite;
+      occluder.mesh.renderOrder = blocked ? 4 : 0;
     }
-    return safeRate;
   }
 
-  private isCameraPointClear(x: number, z: number, radius: number) {
-    if (x < -9.35 || x > 9.35 || z < -9.35 || z > 9.35) return false;
-    return !this.colliders.some(
-      (box) =>
-        x + radius > box.minX &&
-        x - radius < box.maxX &&
-        z + radius > box.minZ &&
-        z - radius < box.maxZ,
+  private pointInsideCollider(x: number, z: number, box: BoxCollider, padding = 0) {
+    return (
+      x >= box.minX - padding &&
+      x <= box.maxX + padding &&
+      z >= box.minZ - padding &&
+      z <= box.maxZ + padding
     );
+  }
+
+  private segmentIntersectsCollider(
+    startX: number,
+    startZ: number,
+    endX: number,
+    endZ: number,
+    box: BoxCollider,
+    padding = 0,
+  ) {
+    let minRate = 0;
+    let maxRate = 1;
+    const deltaX = endX - startX;
+    const deltaZ = endZ - startZ;
+    const axes = [
+      { start: startX, delta: deltaX, min: box.minX - padding, max: box.maxX + padding },
+      { start: startZ, delta: deltaZ, min: box.minZ - padding, max: box.maxZ + padding },
+    ];
+
+    for (const axis of axes) {
+      if (Math.abs(axis.delta) < 0.00001) {
+        if (axis.start < axis.min || axis.start > axis.max) return false;
+        continue;
+      }
+      const near = (axis.min - axis.start) / axis.delta;
+      const far = (axis.max - axis.start) / axis.delta;
+      minRate = Math.max(minRate, Math.min(near, far));
+      maxRate = Math.min(maxRate, Math.max(near, far));
+      if (minRate > maxRate) return false;
+    }
+    return maxRate >= 0 && minRate <= 1;
   }
 
   private canOccupy(x: number, z: number, radius: number) {

@@ -267,10 +267,9 @@ export class Game {
     this.boostRemaining = Math.max(0, this.boostRemaining - dt);
     const movement = this.input.getMovement();
     const look = this.input.getLookDelta();
-    const moveInputActive = movement.lengthSq() > 0.0001;
     const hasBoost = this.boostRemaining > 0;
     const speed = hasBoost ? GAME_CONFIG.player.boostSpeed : GAME_CONFIG.player.walkSpeed;
-    const moved = this.world.movePlayer(movement.x, movement.y, speed * dt);
+    const moved = this.world.movePlayer(movement.x, movement.y, dt, speed);
 
     if (moved) {
       const gain = hasBoost
@@ -286,7 +285,7 @@ export class Game {
     );
     const fridgeSpeed = DIFFICULTY_SETTINGS[this.difficulty].fridgeSpeed * fridgeRate;
     this.world.updateFridge(dt, fridgeSpeed, this.calories);
-    this.world.updateCamera(look.x, look.y, moveInputActive);
+    this.world.updateCamera(look.x, look.y);
     this.world.setPlayerShape(this.calories);
     this.world.updateItems(dt);
 

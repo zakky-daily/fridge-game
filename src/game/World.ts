@@ -232,24 +232,22 @@ export class World {
     this.candyCurrentNodeId = 'south-east';
     this.candyTargetNodeId = 'kitchen-east';
     this.candyPreviousNodeId = 'south-mid';
-    // Start directly behind the player, facing the fridge along the first corridor.
-    this.cameraYaw = -Math.PI / 2;
+    // Start directly behind the player, facing the first corridor.
+    this.cameraYaw = this.playerFacingYaw + Math.PI;
     this.cameraYawOffset = 0;
     this.cameraPitch = 0.34;
     this.setCandyBoxMood('smug');
     this.spawnItems(DIFFICULTY_SETTINGS[difficulty].itemCount);
-    this.updateCamera(0, 0, true, true);
+    this.updateCamera(0, 0);
   }
 
-  updateCamera(deltaX: number, deltaY: number, moveInputActive: boolean, immediate = false) {
+  updateCamera(deltaX: number, deltaY: number) {
     const hasLookInput = Math.abs(deltaX) + Math.abs(deltaY) > 0.001;
     if (hasLookInput) {
       this.cameraYawOffset = clamp(this.cameraYawOffset - deltaX * 0.0018, -0.48, 0.48);
       this.cameraPitch = clamp(this.cameraPitch + deltaY * 0.0016, 0.18, 0.62);
     }
-    if (immediate || moveInputActive || hasLookInput) {
-      this.cameraYaw = this.playerFacingYaw + Math.PI + this.cameraYawOffset;
-    }
+    this.cameraYaw = this.playerFacingYaw + Math.PI + this.cameraYawOffset;
     const distance = 6.2;
     const target = this.player.position.clone().add(new THREE.Vector3(0, 1.35, 0));
     const offset = new THREE.Vector3(
@@ -263,21 +261,31 @@ export class World {
     this.updateCameraOccluders(target);
   }
 
-  movePlayer(inputX: number, inputY: number, distance: number) {
+  movePlayer(inputX: number, inputY: number, dt: number, speed: number) {
     if (Math.abs(inputX) + Math.abs(inputY) < 0.01) return false;
-    const forward = new THREE.Vector3(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw));
-    const right = new THREE.Vector3(-forward.z, 0, forward.x);
-    const direction = forward.multiplyScalar(inputY).add(right.multiplyScalar(inputX)).normalize();
-    const next = this.player.position.clone().addScaledVector(direction, distance);
+    const turnSpeed = 1.45;
+    if (Math.abs(inputX) > 0.015) {
+      this.playerFacingYaw -= inputX * turnSpeed * dt;
+      this.player.rotation.y = this.playerFacingYaw;
+    }
+
+    const forwardAmount = Math.abs(inputY) > 0.015 ? inputY * speed * dt : 0;
+    if (Math.abs(forwardAmount) <= 0) return false;
+
+    const direction = new THREE.Vector3(
+      Math.sin(this.playerFacingYaw),
+      0,
+      Math.cos(this.playerFacingYaw),
+    ).multiplyScalar(Math.sign(forwardAmount));
+    const next = this.player.position.clone().addScaledVector(direction, Math.abs(forwardAmount));
+    const before = this.player.position.clone();
     if (this.canOccupy(next.x, this.player.position.z, GAME_CONFIG.player.radius)) {
       this.player.position.x = next.x;
     }
     if (this.canOccupy(this.player.position.x, next.z, GAME_CONFIG.player.radius)) {
       this.player.position.z = next.z;
     }
-    this.playerFacingYaw = Math.atan2(direction.x, direction.z);
-    this.player.rotation.y = this.playerFacingYaw;
-    return true;
+    return this.player.position.distanceToSquared(before) > 0.00001;
   }
 
   updateFridge(dt: number, speed: number, calories: number) {
@@ -494,7 +502,7 @@ export class World {
     wall.receiveShadow = true;
     this.scene.add(wall);
     const horizontal = width >= depth;
-    this.addBox(
+    const baseTrim = this.addBox(
       x,
       0.08,
       z,
@@ -511,6 +519,7 @@ export class World {
     };
     this.colliders.push(collider);
     this.addCameraOccluder(wall, collider);
+    this.addCameraOccluder(baseTrim, collider);
   }
 
   private addFurniture(
@@ -883,21 +892,21 @@ export class World {
     this.candyPayload.add(bowl, rim);
 
     const candySpecs = [
-      { color: '#ef6b78', accent: '#ffe0e4', position: [-0.38, -0.28, 0.08], rotation: [0.2, 0.4, 0.7], shape: 'wrap' },
-      { color: '#64c8a2', accent: '#e2fff4', position: [0.34, -0.27, 0.12], rotation: [0.5, 0.2, -0.5], shape: 'wrap' },
-      { color: '#6d402d', accent: '#b77b55', position: [0.02, -0.24, -0.22], rotation: [0.1, 0.6, 0.15], shape: 'chocolate' },
-      { color: '#d89a4a', accent: '#5b3827', position: [-0.22, -0.19, -0.32], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
-      { color: '#9b7de3', accent: '#f0e9ff', position: [0.31, -0.18, -0.24], rotation: [0.3, 0.1, 0.9], shape: 'wafer' },
-      { color: '#f58d4c', accent: '#fff0bc', position: [0.02, -0.13, 0.23], rotation: [0.2, 0.5, -0.2], shape: 'lollipop' },
-      { color: '#ff8ab3', accent: '#fff0f6', position: [0.48, -0.2, -0.02], rotation: [0.2, -0.4, 0.35], shape: 'gumdrop' },
-      { color: '#82d5ef', accent: '#e9faff', position: [-0.49, -0.2, -0.1], rotation: [0.35, 0.5, -0.4], shape: 'gumdrop' },
-      { color: '#f1c75b', accent: '#fff4c7', position: [-0.09, -0.08, -0.06], rotation: [0.1, 0.3, 0.5], shape: 'donut' },
-      { color: '#54b9a4', accent: '#d9fff5', position: [0.24, -0.07, 0.04], rotation: [0.4, 0.2, -0.25], shape: 'wrap' },
-      { color: '#7a4d38', accent: '#ce8b62', position: [-0.32, -0.08, 0.16], rotation: [0.15, 0.7, 0.18], shape: 'chocolate' },
-      { color: '#f08ca2', accent: '#fff2f5', position: [0.09, -0.03, -0.28], rotation: [0.25, -0.3, 0.28], shape: 'wafer' },
-      { color: '#b7df51', accent: '#f4ffd4', position: [-0.5, -0.06, 0.18], rotation: [0.1, 0.2, -0.55], shape: 'wrap' },
-      { color: '#f7a7d6', accent: '#ffffff', position: [0.43, -0.05, 0.22], rotation: [0.25, -0.1, 0.1], shape: 'donut' },
-      { color: '#c69052', accent: '#6b3e28', position: [0.0, 0.0, 0.06], rotation: [Math.PI / 2, 0.2, -0.15], shape: 'cookie' },
+      { color: '#ef6b78', accent: '#ffe0e4', position: [-0.44, -0.29, 0.12], rotation: [0.2, 0.4, 0.7], shape: 'wrap' },
+      { color: '#64c8a2', accent: '#e2fff4', position: [0.41, -0.28, 0.15], rotation: [0.5, 0.2, -0.5], shape: 'wrap' },
+      { color: '#6d402d', accent: '#b77b55', position: [0.02, -0.27, -0.32], rotation: [0.1, 0.6, 0.15], shape: 'chocolate' },
+      { color: '#d89a4a', accent: '#5b3827', position: [-0.32, -0.2, -0.4], rotation: [Math.PI / 2, 0.1, 0.2], shape: 'cookie' },
+      { color: '#9b7de3', accent: '#f0e9ff', position: [0.39, -0.19, -0.34], rotation: [0.3, 0.1, 0.9], shape: 'wafer' },
+      { color: '#f58d4c', accent: '#fff0bc', position: [0.08, -0.14, 0.34], rotation: [0.2, 0.5, -0.2], shape: 'lollipop' },
+      { color: '#ff8ab3', accent: '#fff0f6', position: [0.56, -0.22, -0.04], rotation: [0.2, -0.4, 0.35], shape: 'gumdrop' },
+      { color: '#82d5ef', accent: '#e9faff', position: [-0.56, -0.22, -0.12], rotation: [0.35, 0.5, -0.4], shape: 'gumdrop' },
+      { color: '#f1c75b', accent: '#fff4c7', position: [-0.12, -0.08, -0.08], rotation: [0.1, 0.3, 0.5], shape: 'donut' },
+      { color: '#54b9a4', accent: '#d9fff5', position: [0.31, -0.07, 0.02], rotation: [0.4, 0.2, -0.25], shape: 'wrap' },
+      { color: '#7a4d38', accent: '#ce8b62', position: [-0.4, -0.08, 0.24], rotation: [0.15, 0.7, 0.18], shape: 'chocolate' },
+      { color: '#f08ca2', accent: '#fff2f5', position: [0.13, -0.03, -0.42], rotation: [0.25, -0.3, 0.28], shape: 'wafer' },
+      { color: '#b7df51', accent: '#f4ffd4', position: [-0.58, -0.06, 0.28], rotation: [0.1, 0.2, -0.55], shape: 'wrap' },
+      { color: '#f7a7d6', accent: '#ffffff', position: [0.51, -0.05, 0.29], rotation: [0.25, -0.1, 0.1], shape: 'donut' },
+      { color: '#c69052', accent: '#6b3e28', position: [0.0, 0.0, 0.15], rotation: [Math.PI / 2, 0.2, -0.15], shape: 'cookie' },
     ] as const;
     this.candyPieces = candySpecs.map((spec) => {
       const candy = new THREE.Group();
@@ -989,7 +998,7 @@ export class World {
       }
       candy.position.set(spec.position[0], spec.position[1], spec.position[2]);
       candy.rotation.set(spec.rotation[0], spec.rotation[1], spec.rotation[2]);
-      candy.scale.setScalar(0.82);
+      candy.scale.setScalar(0.78);
       candy.traverse((object) => {
         if (object instanceof THREE.Mesh) object.castShadow = true;
       });
@@ -1254,7 +1263,7 @@ export class World {
           this.camera.position.x,
           this.camera.position.z,
           occluder.collider,
-          0.06,
+          0.12,
         );
       occluder.material.opacity = blocked ? Math.min(occluder.baseOpacity, 0.23) : occluder.baseOpacity;
       occluder.material.transparent = blocked || occluder.baseTransparent;

@@ -9,6 +9,8 @@ type Item = {
 type BoxCollider = {
   minX: number;
   maxX: number;
+  minY: number;
+  maxY: number;
   minZ: number;
   maxZ: number;
 };
@@ -97,7 +99,6 @@ export class World {
   private itemSpawnTimer = 4;
   private colliders: BoxCollider[] = [];
   private cameraOccluders: CameraOccluder[] = [];
-  private cameraRaycaster = new THREE.Raycaster();
   private candyShellRadius = 1.08;
   private candyCurrentNodeId = 'south-east';
   private candyTargetNodeId = 'kitchen-east';
@@ -114,6 +115,7 @@ export class World {
   private playerFacingYaw = Math.PI / 2;
   private clockTime = 0;
   private playerBodyMesh!: THREE.Mesh;
+  private playerLowerTorso!: THREE.Mesh;
   private playerBodyBasePositions = new Float32Array();
   private playerShapeRate = 0;
   private playerArms: THREE.Object3D[] = [];
@@ -322,17 +324,25 @@ export class World {
       const side = index === 0 ? -1 : 1;
       arm.position.x = approach(
         arm.position.x,
-        side * lerp(0.8, 0.58, this.playerShapeRate),
+        side * lerp(0.82, 0.62, this.playerShapeRate),
       );
       arm.position.y = approach(
         arm.position.y,
-        lerp(1.87, 1.94, this.playerShapeRate),
+        lerp(1.34, 1.39, this.playerShapeRate),
       );
       arm.rotation.z = approach(
         arm.rotation.z,
-        side * lerp(-0.5, -0.34, this.playerShapeRate),
+        side * lerp(0.08, 0.02, this.playerShapeRate),
       );
     });
+    this.playerLowerTorso.scale.x = approach(
+      this.playerLowerTorso.scale.x,
+      lerp(1.38, 0.94, this.playerShapeRate),
+    );
+    this.playerLowerTorso.scale.z = approach(
+      this.playerLowerTorso.scale.z,
+      lerp(1.18, 0.84, this.playerShapeRate),
+    );
     this.playerLegs.forEach((leg, index) => {
       const side = index === 0 ? -1 : 1;
       leg.position.x = approach(leg.position.x, side * lerp(0.36, 0.25, rate));
@@ -505,6 +515,8 @@ export class World {
     const collider = {
       minX: x - width / 2,
       maxX: x + width / 2,
+      minY: 0,
+      maxY: 3.15,
       minZ: z - depth / 2,
       maxZ: z + depth / 2,
     };
@@ -528,6 +540,8 @@ export class World {
       const collider = {
         minX: x - width / 2,
         maxX: x + width / 2,
+        minY: y,
+        maxY: y + height,
         minZ: z - depth / 2,
         maxZ: z + depth / 2,
       };
@@ -754,12 +768,18 @@ export class World {
     this.playerBodyBasePositions = new Float32Array(
       (bodyGeometry.getAttribute('position') as THREE.BufferAttribute).array,
     );
-    this.assignBodyMaterialGroups(bodyGeometry);
-    this.playerBodyMesh = new THREE.Mesh(bodyGeometry, [shirt, pants]);
+    this.playerBodyMesh = new THREE.Mesh(bodyGeometry, shirt);
     this.playerBodyMesh.position.y = 1.56;
     this.playerBodyMesh.castShadow = true;
 
-    this.playerBody.add(this.playerBodyMesh);
+    this.playerLowerTorso = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.54, 0.42, 32, 1, true),
+      pants,
+    );
+    this.playerLowerTorso.position.set(0, 0.8, 0.03);
+    this.playerLowerTorso.castShadow = true;
+
+    this.playerBody.add(this.playerBodyMesh, this.playerLowerTorso);
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 18, 14), skin);
     head.position.y = 2.72;
@@ -779,8 +799,8 @@ export class World {
     this.playerShoes = [];
     for (const side of [-1, 1] as const) {
       const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.7, 6, 10), skin);
-      arm.position.set(side * 0.8, 1.87, 0);
-      arm.rotation.z = side * -0.5;
+      arm.position.set(side * 0.82, 1.34, 0);
+      arm.rotation.z = side * 0.08;
       arm.castShadow = true;
       this.player.add(arm);
       this.playerArms.push(arm);
@@ -808,28 +828,6 @@ export class World {
     marker.rotation.x = -Math.PI / 2;
     marker.position.y = 0.03;
     this.player.add(marker);
-  }
-
-  private assignBodyMaterialGroups(geometry: THREE.BufferGeometry) {
-    geometry.clearGroups();
-    const positions = geometry.getAttribute('position') as THREE.BufferAttribute;
-    const index = geometry.index;
-    const lowerBodyThreshold = -0.34;
-    if (index) {
-      for (let start = 0; start < index.count; start += 3) {
-        const a = index.getX(start);
-        const b = index.getX(start + 1);
-        const c = index.getX(start + 2);
-        const averageY = (positions.getY(a) + positions.getY(b) + positions.getY(c)) / 3;
-        geometry.addGroup(start, 3, averageY < lowerBodyThreshold ? 1 : 0);
-      }
-      return;
-    }
-    for (let start = 0; start < positions.count; start += 3) {
-      const averageY =
-        (positions.getY(start) + positions.getY(start + 1) + positions.getY(start + 2)) / 3;
-      geometry.addGroup(start, 3, averageY < lowerBodyThreshold ? 1 : 0);
-    }
   }
 
   private buildCandyBox() {
@@ -1260,11 +1258,11 @@ export class World {
   }
 
   private updateCameraOccluders(target: THREE.Vector3) {
-    const targetSamples = this.getCameraOcclusionTargets(target);
+    const rayOrigins = this.getPlayerSurfaceRayOrigins(target);
     for (const occluder of this.cameraOccluders) {
       const blocked =
-        this.pointInsideCollider(this.camera.position.x, this.camera.position.z, occluder.collider, 0.04) ||
-        this.occluderBlocksPlayerView(occluder, targetSamples);
+        this.pointInsideCollider3D(this.camera.position, occluder.collider, 0.04) ||
+        this.occluderBlocksPlayerView(occluder, rayOrigins);
       occluder.material.opacity = blocked ? Math.min(occluder.baseOpacity, 0.23) : occluder.baseOpacity;
       occluder.material.transparent = blocked || occluder.baseTransparent;
       occluder.material.depthWrite = blocked ? false : occluder.baseDepthWrite;
@@ -1272,48 +1270,56 @@ export class World {
     }
   }
 
-  private getCameraOcclusionTargets(target: THREE.Vector3) {
-    const horizontalView = this.camera.position.clone().sub(target).setY(0);
+  private getPlayerSurfaceRayOrigins(target: THREE.Vector3) {
+    const towardCamera = this.camera.position.clone().sub(target).setY(0);
+    const forward =
+      towardCamera.lengthSq() > 0.0001
+        ? towardCamera.normalize()
+        : new THREE.Vector3(0, 0, 1);
+    const horizontalView = forward.clone();
     const right =
       horizontalView.lengthSq() > 0.0001
         ? new THREE.Vector3(horizontalView.z, 0, -horizontalView.x).normalize()
         : new THREE.Vector3(1, 0, 0);
     const base = this.player.position;
+    const bellyWidth = lerp(0.72, 0.46, this.playerShapeRate);
+    const chestWidth = lerp(0.54, 0.44, this.playerShapeRate);
+    const bellyDepth = lerp(0.62, 0.42, this.playerShapeRate);
     return [
-      base.clone().add(new THREE.Vector3(0, 0.7, 0)),
-      base.clone().add(new THREE.Vector3(0, 1.35, 0)),
-      base.clone().add(new THREE.Vector3(0, 2.1, 0)),
-      base.clone().add(new THREE.Vector3(0, 2.55, 0)),
-      target.clone().addScaledVector(right, 0.48),
-      target.clone().addScaledVector(right, -0.48),
-      base.clone().add(new THREE.Vector3(0, 1.85, 0)).addScaledVector(right, 0.42),
-      base.clone().add(new THREE.Vector3(0, 1.85, 0)).addScaledVector(right, -0.42),
+      base.clone().add(new THREE.Vector3(0, 0.75, 0)).addScaledVector(forward, 0.28),
+      base.clone().add(new THREE.Vector3(0, 1.08, 0)).addScaledVector(forward, bellyDepth),
+      base.clone().add(new THREE.Vector3(0, 1.18, 0)).addScaledVector(right, bellyWidth),
+      base.clone().add(new THREE.Vector3(0, 1.18, 0)).addScaledVector(right, -bellyWidth),
+      base.clone().add(new THREE.Vector3(0, 1.45, 0)).addScaledVector(forward, bellyDepth),
+      base.clone().add(new THREE.Vector3(0, 1.55, 0)).addScaledVector(right, bellyWidth * 0.88),
+      base.clone().add(new THREE.Vector3(0, 1.55, 0)).addScaledVector(right, -bellyWidth * 0.88),
+      base.clone().add(new THREE.Vector3(0, 1.9, 0)).addScaledVector(forward, 0.46),
+      base.clone().add(new THREE.Vector3(0, 1.96, 0)).addScaledVector(right, chestWidth),
+      base.clone().add(new THREE.Vector3(0, 1.96, 0)).addScaledVector(right, -chestWidth),
+      base.clone().add(new THREE.Vector3(0, 2.55, 0)).addScaledVector(forward, 0.34),
+      base.clone().add(new THREE.Vector3(0, 2.55, 0)).addScaledVector(right, 0.28),
+      base.clone().add(new THREE.Vector3(0, 2.55, 0)).addScaledVector(right, -0.28),
+      base.clone().add(new THREE.Vector3(0, 2.88, 0)),
     ];
   }
 
-  private occluderBlocksPlayerView(occluder: CameraOccluder, targets: THREE.Vector3[]) {
-    for (const target of targets) {
-      const toTarget = target.clone().sub(this.camera.position);
-      const distance = toTarget.length();
-      if (distance <= 0.1) continue;
-      this.cameraRaycaster.set(this.camera.position, toTarget.normalize());
-      this.cameraRaycaster.near = 0.02;
-      this.cameraRaycaster.far = distance - 0.06;
-      if (this.cameraRaycaster.intersectObject(occluder.mesh, false).length > 0) return true;
-      if (
-        this.segmentIntersectsCollider(
-          target.x,
-          target.z,
-          this.camera.position.x,
-          this.camera.position.z,
-          occluder.collider,
-          0.12,
-        )
-      ) {
-        return true;
-      }
-    }
-    return false;
+  private occluderBlocksPlayerView(occluder: CameraOccluder, rayOrigins: THREE.Vector3[]) {
+    const blockedRays = rayOrigins.filter((origin) =>
+      this.segmentIntersectsCollider3D(origin, this.camera.position, occluder.collider, 0.08),
+    ).length;
+    const requiredRays = Math.max(5, Math.ceil(rayOrigins.length * 0.38));
+    return blockedRays >= requiredRays;
+  }
+
+  private pointInsideCollider3D(point: THREE.Vector3, box: BoxCollider, padding = 0) {
+    return (
+      point.x >= box.minX - padding &&
+      point.x <= box.maxX + padding &&
+      point.y >= box.minY - padding &&
+      point.y <= box.maxY + padding &&
+      point.z >= box.minZ - padding &&
+      point.z <= box.maxZ + padding
+    );
   }
 
   private pointInsideCollider(x: number, z: number, box: BoxCollider, padding = 0) {
@@ -1323,6 +1329,35 @@ export class World {
       z >= box.minZ - padding &&
       z <= box.maxZ + padding
     );
+  }
+
+  private segmentIntersectsCollider3D(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    box: BoxCollider,
+    padding = 0,
+  ) {
+    let minRate = 0;
+    let maxRate = 1;
+    const delta = to.clone().sub(from);
+    const axes = [
+      { start: from.x, delta: delta.x, min: box.minX - padding, max: box.maxX + padding },
+      { start: from.y, delta: delta.y, min: box.minY - padding, max: box.maxY + padding },
+      { start: from.z, delta: delta.z, min: box.minZ - padding, max: box.maxZ + padding },
+    ];
+
+    for (const axis of axes) {
+      if (Math.abs(axis.delta) < 0.00001) {
+        if (axis.start < axis.min || axis.start > axis.max) return false;
+        continue;
+      }
+      const near = (axis.min - axis.start) / axis.delta;
+      const far = (axis.max - axis.start) / axis.delta;
+      minRate = Math.max(minRate, Math.min(near, far));
+      maxRate = Math.min(maxRate, Math.max(near, far));
+      if (minRate > maxRate) return false;
+    }
+    return maxRate >= 0.02 && minRate <= 0.98;
   }
 
   private segmentIntersectsCollider(

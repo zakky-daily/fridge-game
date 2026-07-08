@@ -164,16 +164,6 @@ h2 {
     inset 0 0 0 1px rgba(255, 255, 255, 0.055);
 }
 
-.system-summary::before {
-  content: "";
-  position: absolute;
-  inset: 12px auto 12px 0;
-  width: 4px;
-  border-radius: 999px;
-  background: var(--mint);
-  box-shadow: 0 0 18px rgba(101, 230, 180, 0.72);
-}
-
 .system-summary b {
   color: var(--mint);
   font-size: 1rem;

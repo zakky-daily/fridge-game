@@ -34,6 +34,13 @@ const candyBoxLines = [
   'だんだん転がるのが重くなってきた……！',
 ];
 
+const playerSpeedRates = [1, 1.055, 1.11] as const;
+const playerShapeMessages = [
+  '',
+  '体が軽くなった！ 移動速度が少しアップ',
+  'さらに身軽に！ 移動速度がもう少しアップ',
+] as const;
+
 export class Game {
   private renderer: THREE.WebGLRenderer;
   private world: World;
@@ -44,6 +51,7 @@ export class Game {
   private elapsed = 0;
   private boostRemaining = 0;
   private itemCount = 0;
+  private playerFitnessStage = 0;
   private openingIndex = 0;
   private openingDestination: 'home' | 'difficulty' = 'difficulty';
   private speechTimer = 0;
@@ -252,6 +260,7 @@ export class Game {
     this.elapsed = 0;
     this.boostRemaining = 0;
     this.itemCount = 0;
+    this.playerFitnessStage = 0;
     this.speechTimer = 2.5;
     this.speechIndex = 0;
     this.world.resetForGame(difficulty);
@@ -268,7 +277,8 @@ export class Game {
     const movement = this.input.getMovement();
     const look = this.input.getLookDelta();
     const hasBoost = this.boostRemaining > 0;
-    const speed = hasBoost ? GAME_CONFIG.player.boostSpeed : GAME_CONFIG.player.walkSpeed;
+    const speedRate = playerSpeedRates[this.playerFitnessStage];
+    const speed = (hasBoost ? GAME_CONFIG.player.boostSpeed : GAME_CONFIG.player.walkSpeed) * speedRate;
     const moved = this.world.movePlayer(movement.x, movement.y, dt, speed);
 
     if (moved) {
@@ -278,12 +288,7 @@ export class Game {
       this.calories += gain * dt;
     }
 
-    const rate = clamp(this.calories / GAME_CONFIG.calories.maxForScaling, 0, 1);
-    const fridgeRate = Math.max(
-      DIFFICULTY_SETTINGS[this.difficulty].minSpeedRate,
-      1 - rate * 0.68,
-    );
-    const fridgeSpeed = DIFFICULTY_SETTINGS[this.difficulty].fridgeSpeed * fridgeRate;
+    const fridgeSpeed = DIFFICULTY_SETTINGS[this.difficulty].fridgeSpeed;
     this.world.updateFridge(dt, fridgeSpeed, this.calories);
     this.world.updateCamera(look.x, look.y);
     this.world.setPlayerShape(this.calories);
@@ -297,6 +302,8 @@ export class Game {
       this.audio.playEffect('water');
       this.showToast('水分補給！ 4秒ブースト', 1500);
     }
+
+    this.updatePlayerFitnessStage();
 
     this.speechTimer -= dt;
     if (this.speechTimer <= 0) {
@@ -378,13 +385,26 @@ export class Game {
     }, 2600);
   }
 
+  private updatePlayerFitnessStage() {
+    const nextStage = this.getPlayerFitnessStage(this.calories);
+    if (nextStage <= this.playerFitnessStage) return;
+    this.playerFitnessStage = nextStage;
+    this.showToast(playerShapeMessages[nextStage], 1800);
+  }
+
+  private getPlayerFitnessStage(calories: number) {
+    if (calories >= 80) return 2;
+    if (calories >= 35) return 1;
+    return 0;
+  }
+
   private getHealthType(result: Result) {
-    const calorieStage = result.calories < 35 ? 0 : result.calories < 65 ? 1 : 2;
-    const waterStage = result.items >= 3 ? 1 : 0;
+    const calorieStage = result.calories < 35 ? 0 : result.calories < 80 ? 1 : 2;
+    const waterStage = result.items >= 4 ? 1 : 0;
     const types = [
-      ['はじめの一歩タイプ', '水分補給スタートタイプ'],
+      ['はじめの一歩タイプ', '水だけは一人前タイプ'],
       ['マイペース燃焼タイプ', 'うるおい燃焼タイプ'],
-      ['粘り強い運動タイプ', 'ウォーター・ランナータイプ'],
+      ['粘り強い運動タイプ', 'アクア・アスリート'],
     ] as const;
     return types[calorieStage][waterStage];
   }

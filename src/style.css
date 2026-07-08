@@ -80,9 +80,11 @@ button {
 }
 
 .home-panel {
+  display: grid;
+  gap: 12px;
   justify-self: start;
   margin-left: clamp(0px, 7vw, 110px);
-  width: min(88vw, 500px);
+  width: min(88vw, 560px);
   border: 0;
   background: none;
   box-shadow: none;
@@ -140,31 +142,50 @@ h2 {
 }
 
 .tagline {
-  margin-bottom: 10px;
+  margin-bottom: 0;
   font-weight: 500;
 }
 
 .system-summary {
+  position: relative;
   display: grid;
-  gap: 3px;
-  width: min(100%, 360px);
-  margin-bottom: 18px;
-  padding: 11px 14px;
-  border: 1px solid var(--mint);
-  border-radius: 13px;
-  background: rgba(34, 100, 80, 0.12);
+  gap: 7px;
+  width: min(100%, 470px);
+  margin: 2px 0 9px;
+  padding: 18px 20px 17px 22px;
+  overflow: hidden;
+  border: 1px solid rgba(101, 230, 180, 0.66);
+  border-radius: 19px;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(101, 230, 180, 0.25), transparent 36%),
+    linear-gradient(135deg, rgba(30, 114, 90, 0.44), rgba(12, 31, 50, 0.78));
+  box-shadow:
+    0 16px 45px rgba(0, 0, 0, 0.26),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+}
+
+.system-summary::before {
+  content: "";
+  position: absolute;
+  inset: 12px auto 12px 0;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--mint);
+  box-shadow: 0 0 18px rgba(101, 230, 180, 0.72);
 }
 
 .system-summary b {
   color: var(--mint);
-  font-size: 0.78rem;
+  font-size: 1rem;
+  line-height: 1.45;
+  text-shadow: 0 0 18px rgba(101, 230, 180, 0.28);
 }
 
 .system-summary span {
   display: block;
-  color: #c1cedd;
-  font-size: 0.67rem;
-  line-height: 1.55;
+  color: #d7e5e8;
+  font-size: 0.76rem;
+  line-height: 1.72;
   white-space: normal;
 }
 
@@ -688,9 +709,9 @@ blockquote {
   z-index: 4;
   left: 50%;
   transform: translateX(-50%);
-  padding: 11px 19px;
+  padding: 12px 21px;
   border-radius: 22px;
-  font-size: 0.77rem;
+  font-size: 0.82rem;
   font-weight: 900;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   transition: 0.25s;
@@ -698,8 +719,11 @@ blockquote {
 
 .game-toast {
   top: 22%;
+  padding: 14px 25px;
+  border-radius: 25px;
   color: #0d342a;
   background: var(--mint);
+  font-size: 0.9rem;
 }
 
 .candy-speech {
